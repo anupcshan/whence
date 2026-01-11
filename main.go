@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"strings"
 )
 
 //go:embed index.html
@@ -14,7 +15,19 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	dbPath := flag.String("db", "./data/whence.db", "database path")
 	defaultUser := flag.String("user", "default", "default user ID")
+	configPath := flag.String("config", "", "config file path (default: ~/.config/whence/config.yaml)")
 	flag.Parse()
+
+	// Load config
+	cfg, err := LoadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	// Override default user from config if set
+	if cfg != nil && cfg.DefaultUser != "" {
+		*defaultUser = cfg.DefaultUser
+	}
 
 	db, err := OpenDB(*dbPath)
 	if err != nil {
@@ -27,6 +40,9 @@ func main() {
 		defaultUserID: *defaultUser,
 	}
 
+	// Initialize Immich handlers
+	immichHandlers := NewImmichHandlers(cfg, db)
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -36,10 +52,37 @@ func main() {
 		w.Write(indexHTML)
 	})
 
+	// Existing endpoints
 	http.HandleFunc("/owntracks", server.handleOwnTracks)
 	http.HandleFunc("/gpslogger", server.handleGPSLogger)
 	http.HandleFunc("/api/timeline", server.handleAPITimeline)
 	http.HandleFunc("/api/latest", server.handleAPILatest)
+
+	// Immich endpoints
+	http.HandleFunc("/api/immich/status", immichHandlers.HandleStatus)
+	http.HandleFunc("/api/immich/preview", immichHandlers.HandlePreview)
+	http.HandleFunc("/api/immich/import", immichHandlers.HandleImport)
+	http.HandleFunc("/api/immich/jobs", immichHandlers.HandleJobs)
+	http.HandleFunc("/api/immich/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		// Route based on path suffix
+		if strings.HasSuffix(path, "/resume") {
+			immichHandlers.HandleJobResume(w, r)
+		} else if strings.HasSuffix(path, "/cancel") {
+			immichHandlers.HandleJobCancel(w, r)
+		} else {
+			immichHandlers.HandleJob(w, r)
+		}
+	})
+	http.HandleFunc("/api/immich/assets/", immichHandlers.HandleThumbnail)
+	http.HandleFunc("/api/immich/sync", immichHandlers.HandleSync)
+	http.HandleFunc("/api/immich/sync/status", immichHandlers.HandleSyncStatus)
+
+	if cfg != nil && cfg.ImmichConfigured() {
+		log.Printf("Immich configured: %s", cfg.Immich.URL)
+	} else {
+		log.Printf("Immich not configured (add immich section to config file)")
+	}
 
 	log.Printf("starting server on %s", *addr)
 	if err := http.ListenAndServe(*addr, nil); err != nil {
