@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whence - Location History</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; font-family: system-ui, sans-serif; }
+        #map { height: 100%; width: 100%; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        #controls label { display: block; margin-bottom: 5px; font-size: 12px; }
+        #controls input { margin-bottom: 10px; }
+        #controls button { 
+            width: 100%; 
+            padding: 5px; 
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+        }
+        #controls button:hover { background: #0056b3; }
+        #status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <label>Start Date</label>
+        <input type="date" id="startDate">
+        <label>End Date</label>
+        <input type="date" id="endDate">
+        <button id="applyFilter">Apply Filter</button>
+    </div>
+    <div id="status">Points: 0</div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        let pointsLayer = L.geoJSON(null, {
+            pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+                radius: 4,
+                fillColor: '#e74c3c',
+                color: '#c0392b',
+                weight: 1,
+                opacity: 1,
+                fillOpacity: 0.8
+            }),
+            onEachFeature: (feature, layer) => {
+                const ts = new Date(feature.properties.timestamp * 1000);
+                layer.bindPopup(`
+                    <strong>${ts.toLocaleString()}</strong><br>
+                    Device: ${feature.properties.device_id}<br>
+                    User: ${feature.properties.user_id}
+                `);
+            }
+        }).addTo(map);
+
+        function fetchLocations() {
+            const bounds = map.getBounds();
+            const bbox = [
+                bounds.getWest(),
+                bounds.getSouth(),
+                bounds.getEast(),
+                bounds.getNorth()
+            ].join(',');
+
+            let url = `/api/locations?bbox=${bbox}&zoom=${map.getZoom()}`;
+
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            if (startDate) {
+                url += `&start=${Math.floor(new Date(startDate).getTime() / 1000)}`;
+            }
+            if (endDate) {
+                // End of the selected day
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                url += `&end=${Math.floor(end.getTime() / 1000)}`;
+            }
+
+            fetch(url)
+                .then(r => r.json())
+                .then(data => {
+                    pointsLayer.clearLayers();
+                    pointsLayer.addData(data);
+                    document.getElementById('status').textContent = `Points: ${data.features.length}`;
+                })
+                .catch(err => {
+                    console.error('Failed to fetch locations:', err);
+                });
+        }
+
+        map.on('moveend', fetchLocations);
+        document.getElementById('applyFilter').addEventListener('click', fetchLocations);
+
+        fetchLocations();
+    </script>
+</body>
+</html>

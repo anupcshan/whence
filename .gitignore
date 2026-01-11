@@ -1,0 +1,14 @@
+# Binary
+whence
+
+# Database
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
