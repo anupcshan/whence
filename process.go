@@ -3,10 +3,20 @@ package main
 import "math"
 
 const (
-	stayRadiusMeters   = 50.0
+	stayRadiusMeters  = 50.0
+	earthRadiusMeters = 6371000.0
+	simplifyTolerance = 0.0001 // ~11 meters in degrees
+
+	// Maximum time gap (seconds) to consider points as part of a continuous path
+	// Beyond this gap, we don't draw connecting lines (assumes untracked travel)
+	maxPathGapSec = 30 * 60 // 30 minutes
+
+	// Minimum points in a cluster to be considered a stay
+	// With sparse photo data, even 2 photos at same location indicates a stay
+	stayMinPoints = 2
+
+	// Minimum duration for a single-device cluster to be a stay (continuous tracking)
 	stayMinDurationSec = 5 * 60 // 5 minutes
-	earthRadiusMeters  = 6371000.0
-	simplifyTolerance  = 0.0001 // ~11 meters in degrees
 )
 
 type Stay struct {
@@ -94,7 +104,24 @@ func (c *cluster) toPathPoints() []PathPoint {
 	return points
 }
 
+// isStay determines if a cluster qualifies as a stay
+// A cluster is a stay if it has multiple points OR sufficient duration
+func (c *cluster) isStay() bool {
+	// Multiple points at same location = definite stay (even sparse photo data)
+	if len(c.points) >= stayMinPoints {
+		return true
+	}
+	// Single point with long duration from continuous tracking = stay
+	if c.duration() >= stayMinDurationSec {
+		return true
+	}
+	return false
+}
+
 // ProcessLocations converts raw location points into a timeline of stays and paths.
+// Handles both continuous tracking data and sparse photo geotags by:
+// - Detecting time gaps and not drawing paths across them
+// - Treating clusters of points (even without duration) as stays
 func ProcessLocations(locations []Location) Timeline {
 	timeline := Timeline{
 		Stays: []Stay{},
@@ -107,21 +134,30 @@ func ProcessLocations(locations []Location) Timeline {
 
 	var currentCluster *cluster
 	var currentPath []PathPoint
+	var lastTimestamp int64
+
+	// Save current path if it has enough points
+	savePath := func() {
+		if len(currentPath) > 1 {
+			simplified := simplifyPath(currentPath)
+			if len(simplified) > 1 {
+				timeline.Paths = append(timeline.Paths, simplified)
+			}
+		}
+		currentPath = nil
+	}
 
 	finalizeCluster := func() {
 		if currentCluster == nil {
 			return
 		}
 
-		if currentCluster.duration() >= stayMinDurationSec {
+		if currentCluster.isStay() {
 			// This is a stay
 			timeline.Stays = append(timeline.Stays, currentCluster.toStay())
 
 			// Save the current path if it has points
-			if len(currentPath) > 0 {
-				timeline.Paths = append(timeline.Paths, simplifyPath(currentPath))
-				currentPath = nil
-			}
+			savePath()
 
 			// Start a new path from the stay location
 			stay := currentCluster.toStay()
@@ -130,6 +166,7 @@ func ProcessLocations(locations []Location) Timeline {
 				Lon:       stay.Lon,
 				Timestamp: stay.End,
 			}}
+			lastTimestamp = stay.End
 		} else {
 			// Not a stay, merge into current path
 			currentPath = append(currentPath, currentCluster.toPathPoints()...)
@@ -139,8 +176,18 @@ func ProcessLocations(locations []Location) Timeline {
 	}
 
 	for _, loc := range locations {
+		// Check for time gap - if too large, finalize current state and start fresh
+		if lastTimestamp > 0 && loc.Timestamp-lastTimestamp > maxPathGapSec {
+			// Large time gap detected - don't connect with a path
+			finalizeCluster()
+			savePath()
+			// Start fresh - no connecting path
+			currentPath = nil
+		}
+
 		if currentCluster == nil {
 			currentCluster = newCluster(loc)
+			lastTimestamp = loc.Timestamp
 			continue
 		}
 
@@ -152,16 +199,15 @@ func ProcessLocations(locations []Location) Timeline {
 			finalizeCluster()
 			currentCluster = newCluster(loc)
 		}
+		lastTimestamp = loc.Timestamp
 	}
 
 	// Handle the final cluster
 	if currentCluster != nil {
-		if currentCluster.duration() >= stayMinDurationSec {
+		if currentCluster.isStay() {
 			// Final cluster is a stay
 			timeline.Stays = append(timeline.Stays, currentCluster.toStay())
-			if len(currentPath) > 0 {
-				timeline.Paths = append(timeline.Paths, simplifyPath(currentPath))
-			}
+			savePath()
 		} else {
 			// Final cluster is not a stay - add to path and set current location
 			currentPath = append(currentPath, currentCluster.toPathPoints()...)
