@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -34,20 +35,8 @@ func OpenDB(path string) (*DB, error) {
 		return nil, err
 	}
 
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS locations (
-			timestamp INTEGER NOT NULL,
-			user_id   TEXT NOT NULL,
-			device_id TEXT NOT NULL,
-			lat       REAL NOT NULL,
-			lon       REAL NOT NULL,
-			PRIMARY KEY (timestamp, device_id)
-		) WITHOUT ROWID;
-
-		CREATE INDEX IF NOT EXISTS idx_locations_lat_lon ON locations(lat, lon);
-		CREATE INDEX IF NOT EXISTS idx_locations_timestamp ON locations(timestamp);
-	`); err != nil {
-		return nil, err
+	if err := runMigrations(db); err != nil {
+		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
 
 	return &DB{db}, nil
