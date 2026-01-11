@@ -388,13 +388,67 @@
         let pathsLayer = L.layerGroup().addTo(map);
         let currentLayer = L.layerGroup().addTo(map);
 
-        function formatTime(timestamp) {
-            return new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        function formatDateTime(timestamp) {
+            const d = new Date(timestamp * 1000);
+            const now = new Date();
+            const isToday = d.toDateString() === now.toDateString();
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const isYesterday = d.toDateString() === yesterday.toDateString();
+            
+            const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            if (isToday) {
+                return `Today ${time}`;
+            } else if (isYesterday) {
+                return `Yesterday ${time}`;
+            } else {
+                // Show full date for older entries
+                const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                return `${date} ${time}`;
+            }
+        }
+        
+        function formatDateRange(startTs, endTs) {
+            const start = new Date(startTs * 1000);
+            const end = new Date(endTs * 1000);
+            const sameDay = start.toDateString() === end.toDateString();
+            
+            const startTime = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const endTime = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            const now = new Date();
+            const isToday = start.toDateString() === now.toDateString();
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const isYesterday = start.toDateString() === yesterday.toDateString();
+            
+            let dateStr;
+            if (isToday) {
+                dateStr = 'Today';
+            } else if (isYesterday) {
+                dateStr = 'Yesterday';
+            } else {
+                dateStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            
+            if (sameDay) {
+                return `${dateStr} ${startTime} - ${endTime}`;
+            } else {
+                const endDateStr = end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                return `${dateStr} ${startTime} - ${endDateStr} ${endTime}`;
+            }
         }
 
         function formatDuration(seconds) {
             const mins = Math.floor(seconds / 60);
             const hrs = Math.floor(mins / 60);
+            const days = Math.floor(hrs / 24);
+            
+            if (days > 0) {
+                const remainingHrs = hrs % 24;
+                return `${days}d ${remainingHrs}h`;
+            }
             if (hrs > 0) {
                 const remainingMins = mins % 60;
                 return `${hrs}h ${remainingMins}m`;
@@ -429,7 +483,7 @@
                             weight: 1,
                             opacity: 0,
                             fillOpacity: 0
-                        }).bindPopup(formatTime(point.timestamp))
+                        }).bindPopup(formatDateTime(point.timestamp))
                           .addTo(pathsLayer);
                     });
                 });
@@ -446,7 +500,7 @@
                         opacity: 1,
                         fillOpacity: 0.8
                     }).bindPopup(`
-                        <strong>${formatTime(stay.start)} - ${formatTime(stay.end)}</strong><br>
+                        <strong>${formatDateRange(stay.start, stay.end)}</strong><br>
                         Duration: ${formatDuration(duration)}
                     `).addTo(staysLayer);
                 });
@@ -466,7 +520,7 @@
                     iconAnchor: [8, 8]
                 });
                 L.marker([data.current.lat, data.current.lon], { icon: currentIcon })
-                    .bindPopup(`Current: ${formatTime(data.current.timestamp)}`)
+                    .bindPopup(`Current: ${formatDateTime(data.current.timestamp)}`)
                     .addTo(currentLayer);
             }
 
