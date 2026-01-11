@@ -120,7 +120,17 @@
         map.on('moveend', fetchLocations);
         document.getElementById('applyFilter').addEventListener('click', fetchLocations);
 
-        fetchLocations();
+        // Center on most recent location, then fetch
+        fetch('/api/latest')
+            .then(r => r.json())
+            .then(loc => {
+                if (loc) {
+                    map.setView([loc.lat, loc.lon], 13);
+                } else {
+                    fetchLocations();
+                }
+            })
+            .catch(() => fetchLocations());
     </script>
 </body>
 </html>

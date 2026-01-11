@@ -96,3 +96,16 @@ func (db *DB) QueryLocations(bbox BBox, start, end *int64) ([]Location, error) {
 	}
 	return locations, rows.Err()
 }
+
+func (db *DB) LatestLocation() (*Location, error) {
+	row := db.QueryRow(`SELECT timestamp, user_id, device_id, lat, lon FROM locations ORDER BY timestamp DESC LIMIT 1`)
+	var loc Location
+	err := row.Scan(&loc.Timestamp, &loc.UserID, &loc.DeviceID, &loc.Lat, &loc.Lon)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &loc, nil
+}
