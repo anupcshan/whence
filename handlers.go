@@ -121,25 +121,8 @@ func (s *Server) handleGPSLogger(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-// GeoJSON types
-type GeoJSONFeatureCollection struct {
-	Type     string           `json:"type"`
-	Features []GeoJSONFeature `json:"features"`
-}
-
-type GeoJSONFeature struct {
-	Type       string         `json:"type"`
-	Geometry   GeoJSONPoint   `json:"geometry"`
-	Properties map[string]any `json:"properties"`
-}
-
-type GeoJSONPoint struct {
-	Type        string    `json:"type"`
-	Coordinates []float64 `json:"coordinates"`
-}
-
-// GET /api/locations - GeoJSON endpoint for Leaflet
-func (s *Server) handleAPILocations(w http.ResponseWriter, r *http.Request) {
+// GET /api/timeline - Returns processed timeline with stays and paths
+func (s *Server) handleAPITimeline(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -199,28 +182,10 @@ func (s *Server) handleAPILocations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fc := GeoJSONFeatureCollection{
-		Type:     "FeatureCollection",
-		Features: make([]GeoJSONFeature, 0, len(locations)),
-	}
-
-	for _, loc := range locations {
-		fc.Features = append(fc.Features, GeoJSONFeature{
-			Type: "Feature",
-			Geometry: GeoJSONPoint{
-				Type:        "Point",
-				Coordinates: []float64{loc.Lon, loc.Lat},
-			},
-			Properties: map[string]any{
-				"timestamp": loc.Timestamp,
-				"user_id":   loc.UserID,
-				"device_id": loc.DeviceID,
-			},
-		})
-	}
+	timeline := ProcessLocations(locations)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(fc)
+	json.NewEncoder(w).Encode(timeline)
 }
 
 // GET /api/latest - Returns the most recent location

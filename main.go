@@ -38,7 +38,7 @@ func main() {
 
 	http.HandleFunc("/owntracks", server.handleOwnTracks)
 	http.HandleFunc("/gpslogger", server.handleGPSLogger)
-	http.HandleFunc("/api/locations", server.handleAPILocations)
+	http.HandleFunc("/api/timeline", server.handleAPITimeline)
 	http.HandleFunc("/api/latest", server.handleAPILatest)
 
 	log.Printf("starting server on %s", *addr)

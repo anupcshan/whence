@@ -42,6 +42,14 @@
             font-size: 12px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .current-marker {
+            animation: pulse 2s infinite;
+        }
     </style>
 </head>
 <body>
@@ -53,7 +61,7 @@
         <input type="date" id="endDate">
         <button id="applyFilter">Apply Filter</button>
     </div>
-    <div id="status">Points: 0</div>
+    <div id="status">Stays: 0</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script>
@@ -62,26 +70,99 @@
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        let pointsLayer = L.geoJSON(null, {
-            pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-                radius: 4,
-                fillColor: '#e74c3c',
-                color: '#c0392b',
-                weight: 1,
-                opacity: 1,
-                fillOpacity: 0.8
-            }),
-            onEachFeature: (feature, layer) => {
-                const ts = new Date(feature.properties.timestamp * 1000);
-                layer.bindPopup(`
-                    <strong>${ts.toLocaleString()}</strong><br>
-                    Device: ${feature.properties.device_id}<br>
-                    User: ${feature.properties.user_id}
-                `);
-            }
-        }).addTo(map);
+        // Layer groups for different elements
+        let staysLayer = L.layerGroup().addTo(map);
+        let pathsLayer = L.layerGroup().addTo(map);
+        let currentLayer = L.layerGroup().addTo(map);
 
-        function fetchLocations() {
+        function formatTime(timestamp) {
+            return new Date(timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const hrs = Math.floor(mins / 60);
+            if (hrs > 0) {
+                const remainingMins = mins % 60;
+                return `${hrs}h ${remainingMins}m`;
+            }
+            return `${mins}m`;
+        }
+
+        function renderTimeline(data) {
+            staysLayer.clearLayers();
+            pathsLayer.clearLayers();
+            currentLayer.clearLayers();
+
+            // Render paths (blue polylines)
+            if (data.paths) {
+                data.paths.forEach(path => {
+                    const latlngs = path.map(p => [p.lat, p.lon]);
+                    const polyline = L.polyline(latlngs, {
+                        color: '#3498db',
+                        weight: 3,
+                        opacity: 0.8
+                    }).addTo(pathsLayer);
+
+                    // Make path segments clickable
+                    path.forEach(point => {
+                        L.circleMarker([point.lat, point.lon], {
+                            radius: 6,
+                            fillColor: '#3498db',
+                            color: '#2980b9',
+                            weight: 1,
+                            opacity: 0,
+                            fillOpacity: 0
+                        }).bindPopup(formatTime(point.timestamp))
+                          .addTo(pathsLayer);
+                    });
+                });
+            }
+
+            // Render stays (red markers)
+            if (data.stays) {
+                data.stays.forEach(stay => {
+                    const duration = stay.end - stay.start;
+                    const marker = L.circleMarker([stay.lat, stay.lon], {
+                        radius: 8,
+                        fillColor: '#e74c3c',
+                        color: '#c0392b',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    }).bindPopup(`
+                        <strong>${formatTime(stay.start)} - ${formatTime(stay.end)}</strong><br>
+                        Duration: ${formatDuration(duration)}
+                    `).addTo(staysLayer);
+                });
+            }
+
+            // Render current location (pulsing blue marker)
+            if (data.current) {
+                const currentIcon = L.divIcon({
+                    className: 'current-marker',
+                    html: `<div style="
+                        width: 16px;
+                        height: 16px;
+                        background: #2ecc71;
+                        border: 3px solid #27ae60;
+                        border-radius: 50%;
+                    "></div>`,
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                });
+                L.marker([data.current.lat, data.current.lon], { icon: currentIcon })
+                    .bindPopup(`Current: ${formatTime(data.current.timestamp)}`)
+                    .addTo(currentLayer);
+            }
+
+            // Update status
+            const stayCount = data.stays ? data.stays.length : 0;
+            const pathCount = data.paths ? data.paths.length : 0;
+            document.getElementById('status').textContent = `Stays: ${stayCount}, Paths: ${pathCount}`;
+        }
+
+        function fetchTimeline() {
             const bounds = map.getBounds();
             const bbox = [
                 bounds.getWest(),
@@ -90,7 +171,7 @@
                 bounds.getNorth()
             ].join(',');
 
-            let url = `/api/locations?bbox=${bbox}&zoom=${map.getZoom()}`;
+            let url = `/api/timeline?bbox=${bbox}`;
 
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -107,18 +188,14 @@
 
             fetch(url)
                 .then(r => r.json())
-                .then(data => {
-                    pointsLayer.clearLayers();
-                    pointsLayer.addData(data);
-                    document.getElementById('status').textContent = `Points: ${data.features.length}`;
-                })
+                .then(renderTimeline)
                 .catch(err => {
-                    console.error('Failed to fetch locations:', err);
+                    console.error('Failed to fetch timeline:', err);
                 });
         }
 
-        map.on('moveend', fetchLocations);
-        document.getElementById('applyFilter').addEventListener('click', fetchLocations);
+        map.on('moveend', fetchTimeline);
+        document.getElementById('applyFilter').addEventListener('click', fetchTimeline);
 
         // Center on most recent location, then fetch
         fetch('/api/latest')
@@ -127,10 +204,10 @@
                 if (loc) {
                     map.setView([loc.lat, loc.lon], 13);
                 } else {
-                    fetchLocations();
+                    fetchTimeline();
                 }
             })
-            .catch(() => fetchLocations());
+            .catch(() => fetchTimeline());
     </script>
 </body>
 </html>
