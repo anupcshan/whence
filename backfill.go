@@ -406,6 +406,16 @@ func (bm *BackfillManager) runImport(ctx context.Context, jobID string, config I
 		log.Printf("import job %s: failed to mark complete: %v", jobID, err)
 	}
 
+	// Rebuild paths after import
+	if job.Imported > 0 {
+		log.Printf("import job %s: rebuilding paths...", jobID)
+		if err := bm.db.RebuildAllPaths(); err != nil {
+			log.Printf("import job %s: failed to rebuild paths: %v", jobID, err)
+		} else {
+			log.Printf("import job %s: paths rebuilt successfully", jobID)
+		}
+	}
+
 	log.Printf("import job %s: completed - imported=%d, skipped=%d, errors=%d",
 		jobID, job.Imported, job.Skipped, job.Errors)
 }

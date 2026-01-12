@@ -8,7 +8,7 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; }
-        
+
         /* Navigation */
         #nav {
             position: absolute;
@@ -34,7 +34,7 @@
         }
         #nav button:hover { background: #f0f0f0; }
         #nav button.active { background: #007bff; color: white; }
-        
+
         /* Map View */
         #map { height: 100%; width: 100%; }
         #controls {
@@ -78,7 +78,7 @@
             100% { transform: scale(1); opacity: 1; }
         }
         .current-marker { animation: pulse 2s infinite; }
-        
+
         /* Import View */
         #import-view {
             display: none;
@@ -90,7 +90,7 @@
         #import-view.active { display: block; }
         #map-view { height: 100%; }
         #map-view.hidden { display: none; }
-        
+
         .import-container {
             max-width: 800px;
             margin: 40px auto;
@@ -103,7 +103,7 @@
             margin-bottom: 20px;
             color: #333;
         }
-        
+
         .status-box {
             padding: 16px;
             border-radius: 6px;
@@ -113,7 +113,7 @@
         .status-box.warning { background: #fff3cd; border: 1px solid #ffeeba; }
         .status-box.error { background: #f8d7da; border: 1px solid #f5c6cb; }
         .status-box.info { background: #e7f3ff; border: 1px solid #b8daff; }
-        
+
         .form-group {
             margin-bottom: 16px;
         }
@@ -135,7 +135,7 @@
             gap: 16px;
         }
         .form-row .form-group { flex: 1; }
-        
+
         .btn {
             padding: 10px 20px;
             border: none;
@@ -151,7 +151,7 @@
         .btn-secondary:hover { background: #545b62; }
         .btn-success { background: #28a745; color: white; }
         .btn-success:hover { background: #1e7e34; }
-        
+
         .progress-bar {
             height: 24px;
             background: #e9ecef;
@@ -170,7 +170,7 @@
             font-size: 12px;
             font-weight: 500;
         }
-        
+
         .camera-table {
             width: 100%;
             border-collapse: collapse;
@@ -192,7 +192,7 @@
             height: 18px;
             cursor: pointer;
         }
-        
+
         .stats {
             display: flex;
             gap: 24px;
@@ -210,13 +210,13 @@
             font-size: 12px;
             color: #666;
         }
-        
+
         .actions {
             display: flex;
             gap: 12px;
             margin-top: 20px;
         }
-        
+
         .job-list {
             margin-top: 24px;
         }
@@ -240,7 +240,7 @@
         .job-status.failed { background: #f8d7da; color: #721c24; }
         .job-status.interrupted { background: #e2e3e5; color: #383d41; }
         .job-status.cancelled { background: #e2e3e5; color: #383d41; }
-        
+
         #scan-progress, #import-progress { display: none; }
         #camera-selection { display: none; }
         #import-complete { display: none; }
@@ -251,7 +251,7 @@
         <button id="nav-map" class="active">Map</button>
         <button id="nav-import">Import</button>
     </div>
-    
+
     <div id="map-view">
         <div id="map"></div>
         <div id="controls">
@@ -261,15 +261,15 @@
             <input type="date" id="endDate">
             <button id="applyFilter">Apply Filter</button>
         </div>
-        <div id="status">Stays: 0</div>
+        <div id="status">Paths: 0, Points: 0</div>
     </div>
-    
+
     <div id="import-view">
         <div class="import-container">
             <h2>Import from Immich</h2>
-            
+
             <div id="immich-status"></div>
-            
+
             <div id="scan-form">
                 <div class="form-row">
                     <div class="form-group">
@@ -283,7 +283,7 @@
                 </div>
                 <button class="btn btn-primary" id="btn-scan">Scan for Photos</button>
             </div>
-            
+
             <div id="scan-progress">
                 <h3>Scanning photos...</h3>
                 <div class="progress-bar">
@@ -292,7 +292,7 @@
                 <p id="scan-status">Starting scan...</p>
                 <button class="btn btn-secondary" id="btn-cancel-scan">Cancel</button>
             </div>
-            
+
             <div id="camera-selection">
                 <h3>Select cameras to import</h3>
                 <div class="stats" id="scan-stats"></div>
@@ -313,7 +313,7 @@
                     <button class="btn btn-secondary" id="btn-rescan">Scan Again</button>
                 </div>
             </div>
-            
+
             <div id="import-progress">
                 <h3>Importing locations...</h3>
                 <div class="progress-bar">
@@ -335,7 +335,7 @@
                 </div>
                 <button class="btn btn-secondary" id="btn-cancel-import">Cancel</button>
             </div>
-            
+
             <div id="import-complete">
                 <div class="status-box success">
                     <strong>Import complete!</strong>
@@ -346,7 +346,7 @@
                     <button class="btn btn-secondary" id="btn-import-more">Import More</button>
                 </div>
             </div>
-            
+
             <div class="job-list" id="job-list">
                 <h3>Recent Import Jobs</h3>
                 <div id="jobs"></div>
@@ -361,14 +361,14 @@
         const navImport = document.getElementById('nav-import');
         const mapView = document.getElementById('map-view');
         const importView = document.getElementById('import-view');
-        
+
         navMap.addEventListener('click', () => {
             navMap.classList.add('active');
             navImport.classList.remove('active');
             mapView.classList.remove('hidden');
             importView.classList.remove('active');
         });
-        
+
         navImport.addEventListener('click', () => {
             navImport.classList.add('active');
             navMap.classList.remove('active');
@@ -377,14 +377,13 @@
             checkImmichStatus();
             loadJobs();
         });
-        
+
         // Map initialization
         const map = L.map('map').setView([0, 0], 2);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
 
-        let staysLayer = L.layerGroup().addTo(map);
         let pathsLayer = L.layerGroup().addTo(map);
         let currentLayer = L.layerGroup().addTo(map);
 
@@ -395,9 +394,9 @@
             const yesterday = new Date(now);
             yesterday.setDate(yesterday.getDate() - 1);
             const isYesterday = d.toDateString() === yesterday.toDateString();
-            
+
             const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
+
             if (isToday) {
                 return `Today ${time}`;
             } else if (isYesterday) {
@@ -408,21 +407,21 @@
                 return `${date} ${time}`;
             }
         }
-        
+
         function formatDateRange(startTs, endTs) {
             const start = new Date(startTs * 1000);
             const end = new Date(endTs * 1000);
             const sameDay = start.toDateString() === end.toDateString();
-            
+
             const startTime = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const endTime = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
+
             const now = new Date();
             const isToday = start.toDateString() === now.toDateString();
             const yesterday = new Date(now);
             yesterday.setDate(yesterday.getDate() - 1);
             const isYesterday = start.toDateString() === yesterday.toDateString();
-            
+
             let dateStr;
             if (isToday) {
                 dateStr = 'Today';
@@ -431,7 +430,7 @@
             } else {
                 dateStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
             }
-            
+
             if (sameDay) {
                 return `${dateStr} ${startTime} - ${endTime}`;
             } else {
@@ -444,7 +443,7 @@
             const mins = Math.floor(seconds / 60);
             const hrs = Math.floor(mins / 60);
             const days = Math.floor(hrs / 24);
-            
+
             if (days > 0) {
                 const remainingHrs = hrs % 24;
                 return `${days}d ${remainingHrs}h`;
@@ -455,54 +454,83 @@
             }
             return `${mins}m`;
         }
-        
+
         function formatDate(dateStr) {
             const d = new Date(dateStr);
             return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
         }
 
-        function renderTimeline(data) {
-            staysLayer.clearLayers();
+        // Minimum time gap (seconds) to consider a point as a "stop"
+        const STOP_GAP_SECONDS = 10 * 60; // 10 minutes
+
+        function renderPaths(data) {
             pathsLayer.clearLayers();
             currentLayer.clearLayers();
 
             if (data.paths) {
                 data.paths.forEach(path => {
-                    const latlngs = path.map(p => [p.lat, p.lon]);
-                    L.polyline(latlngs, {
+                    if (!path.points || path.points.length === 0) return;
+
+                    const latlngs = path.points.map(p => [p.lat, p.lon]);
+
+                    // Draw the path line with arrow decorations
+                    const polyline = L.polyline(latlngs, {
                         color: '#3498db',
                         weight: 3,
                         opacity: 0.8
-                    }).addTo(pathsLayer);
-
-                    path.forEach(point => {
-                        L.circleMarker([point.lat, point.lon], {
-                            radius: 6,
-                            fillColor: '#3498db',
-                            color: '#2980b9',
-                            weight: 1,
-                            opacity: 0,
-                            fillOpacity: 0
-                        }).bindPopup(formatDateTime(point.timestamp))
-                          .addTo(pathsLayer);
-                    });
-                });
-            }
-
-            if (data.stays) {
-                data.stays.forEach(stay => {
-                    const duration = stay.end - stay.start;
-                    L.circleMarker([stay.lat, stay.lon], {
-                        radius: 8,
-                        fillColor: '#e74c3c',
-                        color: '#c0392b',
-                        weight: 2,
-                        opacity: 1,
-                        fillOpacity: 0.8
                     }).bindPopup(`
-                        <strong>${formatDateRange(stay.start, stay.end)}</strong><br>
-                        Duration: ${formatDuration(duration)}
-                    `).addTo(staysLayer);
+                        <strong>${path.date}</strong><br>
+                        ${path.point_count} points
+                    `).addTo(pathsLayer);
+
+                    // Add direction arrows along the path
+                    addDirectionArrows(polyline, pathsLayer);
+
+                    // Detect stops and add markers
+                    for (let i = 0; i < path.points.length; i++) {
+                        const point = path.points[i];
+                        const nextPoint = path.points[i + 1];
+
+                        // Calculate gap to next point (or mark last point)
+                        let isStop = false;
+                        let stopDuration = 0;
+
+                        if (nextPoint) {
+                            stopDuration = nextPoint.timestamp - point.timestamp;
+                            isStop = stopDuration >= STOP_GAP_SECONDS;
+                        } else if (i === path.points.length - 1 && path.points.length > 1) {
+                            // Last point of the day - mark as end
+                            isStop = true;
+                        }
+
+                        // First point is always a start marker
+                        if (i === 0) {
+                            L.circleMarker([point.lat, point.lon], {
+                                radius: 7,
+                                fillColor: '#27ae60',
+                                color: '#1e8449',
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.9
+                            }).bindPopup(`<strong>Start</strong><br>${formatDateTime(point.timestamp)}`)
+                              .addTo(pathsLayer);
+                        } else if (isStop) {
+                            // Stop marker - red, with duration info
+                            const popupContent = stopDuration > 0 
+                                ? `<strong>Stopped ${formatDuration(stopDuration)}</strong><br>${formatDateTime(point.timestamp)}`
+                                : `<strong>End</strong><br>${formatDateTime(point.timestamp)}`;
+
+                            L.circleMarker([point.lat, point.lon], {
+                                radius: 7,
+                                fillColor: '#e74c3c',
+                                color: '#c0392b',
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.9
+                            }).bindPopup(popupContent)
+                              .addTo(pathsLayer);
+                        }
+                    }
                 });
             }
 
@@ -524,12 +552,46 @@
                     .addTo(currentLayer);
             }
 
-            const stayCount = data.stays ? data.stays.length : 0;
             const pathCount = data.paths ? data.paths.length : 0;
-            document.getElementById('status').textContent = `Stays: ${stayCount}, Paths: ${pathCount}`;
+            const pointCount = data.paths ? data.paths.reduce((sum, p) => sum + (p.point_count || 0), 0) : 0;
+            document.getElementById('status').textContent = `Paths: ${pathCount}, Points: ${pointCount}`;
         }
 
-        function fetchTimeline() {
+        // Add direction arrows along a polyline
+        function addDirectionArrows(polyline, layer) {
+            const latlngs = polyline.getLatLngs();
+            if (latlngs.length < 2) return;
+
+            // Add arrows at regular intervals
+            const totalPoints = latlngs.length;
+            const arrowInterval = Math.max(1, Math.floor(totalPoints / 8)); // ~8 arrows max per path
+
+            for (let i = arrowInterval; i < totalPoints - 1; i += arrowInterval) {
+                const start = latlngs[i - 1];
+                const end = latlngs[i];
+
+                // Calculate angle
+                const angle = Math.atan2(end.lng - start.lng, end.lat - start.lat) * 180 / Math.PI;
+
+                // Create arrow marker
+                const arrowIcon = L.divIcon({
+                    className: 'direction-arrow',
+                    html: `<div style="
+                        transform: rotate(${angle}deg);
+                        color: #2980b9;
+                        font-size: 14px;
+                        font-weight: bold;
+                        text-shadow: 0 0 2px white, 0 0 2px white;
+                    ">&#9650;</div>`,
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7]
+                });
+
+                L.marker(end, { icon: arrowIcon, interactive: false }).addTo(layer);
+            }
+        }
+
+        function fetchPaths() {
             const bounds = map.getBounds();
             const bbox = [
                 bounds.getWest(),
@@ -538,11 +600,11 @@
                 bounds.getNorth()
             ].join(',');
 
-            let url = `/api/timeline?bbox=${bbox}`;
+            let url = `/api/paths?bbox=${bbox}`;
 
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
-            
+
             if (startDate) {
                 url += `&start=${Math.floor(new Date(startDate).getTime() / 1000)}`;
             }
@@ -554,12 +616,12 @@
 
             fetch(url)
                 .then(r => r.json())
-                .then(renderTimeline)
-                .catch(err => console.error('Failed to fetch timeline:', err));
+                .then(renderPaths)
+                .catch(err => console.error('Failed to fetch paths:', err));
         }
 
-        map.on('moveend', fetchTimeline);
-        document.getElementById('applyFilter').addEventListener('click', fetchTimeline);
+        map.on('moveend', fetchPaths);
+        document.getElementById('applyFilter').addEventListener('click', fetchPaths);
 
         fetch('/api/latest')
             .then(r => r.json())
@@ -567,17 +629,17 @@
                 if (loc) {
                     map.setView([loc.lat, loc.lon], 13);
                 } else {
-                    fetchTimeline();
+                    fetchPaths();
                 }
             })
-            .catch(() => fetchTimeline());
-        
+            .catch(() => fetchPaths());
+
         // Import functionality
         let scanEventSource = null;
         let scannedCameras = [];
         let currentJobId = null;
         let pollInterval = null;
-        
+
         function checkImmichStatus() {
             fetch('/api/immich/status')
                 .then(r => r.json())
@@ -621,7 +683,7 @@
                     `;
                 });
         }
-        
+
         function loadJobs() {
             fetch('/api/immich/jobs')
                 .then(r => r.json())
@@ -631,7 +693,7 @@
                         jobsDiv.innerHTML = '<p style="color: #666;">No import jobs yet</p>';
                         return;
                     }
-                    
+
                     jobsDiv.innerHTML = data.jobs.slice(0, 5).map(job => `
                         <div class="job-item">
                             <div>
@@ -644,7 +706,7 @@
                 })
                 .catch(err => console.error('Failed to load jobs:', err));
         }
-        
+
         document.getElementById('btn-scan').addEventListener('click', startScan);
         document.getElementById('btn-cancel-scan').addEventListener('click', cancelScan);
         document.getElementById('btn-rescan').addEventListener('click', () => {
@@ -655,38 +717,38 @@
         document.getElementById('btn-cancel-import').addEventListener('click', cancelImport);
         document.getElementById('btn-view-map').addEventListener('click', () => {
             navMap.click();
-            fetchTimeline();
+            fetchPaths();
         });
         document.getElementById('btn-import-more').addEventListener('click', () => {
             document.getElementById('import-complete').style.display = 'none';
             document.getElementById('scan-form').style.display = 'block';
             loadJobs();
         });
-        
+
         document.getElementById('select-all').addEventListener('change', (e) => {
             document.querySelectorAll('#camera-list input[type="checkbox"]').forEach(cb => {
                 cb.checked = e.target.checked;
             });
             updateSelectionSummary();
         });
-        
+
         function startScan() {
             const startDate = document.getElementById('import-start').value;
             const endDate = document.getElementById('import-end').value;
-            
+
             let url = '/api/immich/preview?';
             if (startDate) url += `after=${startDate}T00:00:00Z&`;
             if (endDate) url += `before=${endDate}T23:59:59Z&`;
-            
+
             document.getElementById('scan-form').style.display = 'none';
             document.getElementById('scan-progress').style.display = 'block';
             document.getElementById('scan-fill').style.width = '0%';
             document.getElementById('scan-fill').textContent = '0%';
-            
+
             scannedCameras = [];
-            
+
             scanEventSource = new EventSource(url);
-            
+
             scanEventSource.addEventListener('progress', (e) => {
                 const data = JSON.parse(e.data);
                 const percent = Math.round(data.percent);
@@ -696,14 +758,14 @@
                     `Scanned ${data.scanned.toLocaleString()} photos, found ${data.photos_with_gps.toLocaleString()} with GPS`;
                 scannedCameras = data.cameras;
             });
-            
+
             scanEventSource.addEventListener('complete', (e) => {
                 const data = JSON.parse(e.data);
                 scannedCameras = data.cameras;
                 scanEventSource.close();
                 showCameraSelection(data);
             });
-            
+
             scanEventSource.addEventListener('error', (e) => {
                 let errorMsg = 'Scan failed';
                 try {
@@ -721,7 +783,7 @@
                 `;
             });
         }
-        
+
         function cancelScan() {
             if (scanEventSource) {
                 scanEventSource.close();
@@ -730,11 +792,11 @@
             document.getElementById('scan-progress').style.display = 'none';
             document.getElementById('scan-form').style.display = 'block';
         }
-        
+
         function showCameraSelection(data) {
             document.getElementById('scan-progress').style.display = 'none';
             document.getElementById('camera-selection').style.display = 'block';
-            
+
             document.getElementById('scan-stats').innerHTML = `
                 <div class="stat">
                     <div class="stat-value">${data.scanned.toLocaleString()}</div>
@@ -749,7 +811,7 @@
                     <div class="stat-label">Cameras</div>
                 </div>
             `;
-            
+
             const tbody = document.getElementById('camera-list');
             tbody.innerHTML = data.cameras.map(cam => `
                 <tr>
@@ -759,14 +821,14 @@
                     <td>${formatDate(cam.earliest)} - ${formatDate(cam.latest)}</td>
                 </tr>
             `).join('');
-            
+
             tbody.querySelectorAll('input[type="checkbox"]').forEach(cb => {
                 cb.addEventListener('change', updateSelectionSummary);
             });
-            
+
             updateSelectionSummary();
         }
-        
+
         function updateSelectionSummary() {
             const checkboxes = document.querySelectorAll('#camera-list input[type="checkbox"]:checked');
             let totalPhotos = 0;
@@ -776,30 +838,30 @@
             document.getElementById('selection-summary').textContent = 
                 `Selected: ${totalPhotos.toLocaleString()} photos from ${checkboxes.length} camera(s)`;
         }
-        
+
         function startImport() {
             const selectedCameras = [];
             document.querySelectorAll('#camera-list input[type="checkbox"]:checked').forEach(cb => {
                 selectedCameras.push(cb.dataset.device);
             });
-            
+
             if (selectedCameras.length === 0) {
                 alert('Please select at least one camera');
                 return;
             }
-            
+
             const startDate = document.getElementById('import-start').value;
             const endDate = document.getElementById('import-end').value;
-            
+
             const body = {
                 cameras: selectedCameras
             };
             if (startDate) body.after = `${startDate}T00:00:00Z`;
             if (endDate) body.before = `${endDate}T23:59:59Z`;
-            
+
             document.getElementById('camera-selection').style.display = 'none';
             document.getElementById('import-progress').style.display = 'block';
-            
+
             fetch('/api/immich/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -816,10 +878,10 @@
                 alert('Failed to start import: ' + err.message);
             });
         }
-        
+
         function pollJobProgress() {
             if (!currentJobId) return;
-            
+
             pollInterval = setInterval(() => {
                 fetch(`/api/immich/jobs/${currentJobId}`)
                     .then(r => r.json())
@@ -830,7 +892,7 @@
                         document.getElementById('stat-imported').textContent = data.imported.toLocaleString();
                         document.getElementById('stat-skipped').textContent = data.skipped.toLocaleString();
                         document.getElementById('stat-errors').textContent = data.errors.toLocaleString();
-                        
+
                         if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
                             clearInterval(pollInterval);
                             showImportComplete(data);
@@ -841,10 +903,10 @@
                     });
             }, 1000);
         }
-        
+
         function cancelImport() {
             if (!currentJobId) return;
-            
+
             fetch(`/api/immich/jobs/${currentJobId}/cancel`, { method: 'POST' })
                 .then(() => {
                     clearInterval(pollInterval);
@@ -854,15 +916,15 @@
                 })
                 .catch(err => alert('Failed to cancel: ' + err.message));
         }
-        
+
         function showImportComplete(data) {
             document.getElementById('import-progress').style.display = 'none';
             document.getElementById('import-complete').style.display = 'block';
-            
+
             let summary = `Imported ${data.imported.toLocaleString()} locations`;
             if (data.skipped > 0) summary += `, skipped ${data.skipped.toLocaleString()} duplicates`;
             if (data.errors > 0) summary += `, ${data.errors.toLocaleString()} errors`;
-            
+
             document.getElementById('complete-summary').textContent = summary;
             loadJobs();
         }

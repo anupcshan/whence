@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS path_points;
+DROP TABLE IF EXISTS paths;

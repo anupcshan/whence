@@ -8,6 +8,8 @@ A self-hosted location history server.
 - SQLite via modernc.org/sqlite
 - Leaflet.js for frontend map
 
+Minimize use of non-Go code. JavaScript should only be used where absolutely necessary for frontend functionality.
+
 ## Building
 
 ```bash
