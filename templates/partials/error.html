@@ -1,0 +1,9 @@
+<div class="status-box error">
+    <strong>{{.Title}}</strong>
+    <p>{{.Message}}</p>
+</div>
+{{if .ShowRetry}}
+<div class="actions">
+    <a href="/import" class="btn btn-secondary">Try Again</a>
+</div>
+{{end}}

@@ -1,0 +1,13 @@
+{{if not .Jobs}}
+<p style="color: #666;">No import jobs yet</p>
+{{else}}
+{{range .Jobs}}
+<div class="job-item">
+    <div>
+        <strong>{{.StartedAt}}</strong>
+        <br><small>Imported: {{.Imported}} | Skipped: {{.Skipped}}</small>
+    </div>
+    <span class="job-status {{.Status}}">{{.Status}}</span>
+</div>
+{{end}}
+{{end}}

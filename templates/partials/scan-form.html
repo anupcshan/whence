@@ -1,0 +1,18 @@
+<div id="scan-form">
+    <form hx-get="/api/immich/preview" hx-target="#scan-area" hx-swap="innerHTML">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Date (optional)</label>
+                <input type="date" name="after">
+            </div>
+            <div class="form-group">
+                <label>End Date (optional)</label>
+                <input type="date" name="before">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">
+            Scan for Photos
+            <span class="htmx-indicator"> ...</span>
+        </button>
+    </form>
+</div>

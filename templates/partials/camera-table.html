@@ -1,0 +1,51 @@
+<div id="camera-selection">
+    <h3>Select cameras to import</h3>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-value">{{.Scanned}}</div>
+            <div class="stat-label">Total Photos</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{.WithGPS}}</div>
+            <div class="stat-label">With GPS</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{len .Cameras}}</div>
+            <div class="stat-label">Cameras</div>
+        </div>
+    </div>
+
+    <form hx-post="/api/immich/import" hx-target="#scan-area" hx-swap="innerHTML">
+        {{if .After}}<input type="hidden" name="after" value="{{.After}}">{{end}}
+        {{if .Before}}<input type="hidden" name="before" value="{{.Before}}">{{end}}
+        
+        <table class="camera-table">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="select-all" checked onclick="document.querySelectorAll('input[name=cameras]').forEach(c => c.checked = this.checked)"></th>
+                    <th>Camera</th>
+                    <th>Photos</th>
+                    <th>Date Range</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .Cameras}}
+                <tr>
+                    <td><input type="checkbox" name="cameras" value="{{.DeviceID}}" checked></td>
+                    <td>{{.DeviceID}}</td>
+                    <td>{{.Count}}</td>
+                    <td>{{.Earliest}} - {{.Latest}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+
+        <div class="actions">
+            <button type="submit" class="btn btn-success">
+                Start Import
+                <span class="htmx-indicator"> ...</span>
+            </button>
+            <a href="/import" class="btn btn-secondary">Scan Again</a>
+        </div>
+    </form>
+</div>

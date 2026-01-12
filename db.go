@@ -35,6 +35,17 @@ func OpenDB(path string) (*DB, error) {
 		return nil, err
 	}
 
+	// Enable WAL mode for better concurrent read/write performance
+	// Note: modernc.org/sqlite doesn't support DSN parameters, must use PRAGMA
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+
+	// Set busy timeout to 5 seconds (5000ms) to handle concurrent access
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
+	}
+
 	if err := runMigrations(db); err != nil {
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}

@@ -1,0 +1,10 @@
+<div id="import-complete">
+    <div class="status-box success">
+        <strong>Import complete!</strong>
+        <p>Imported {{.Imported}} locations{{if gt .Skipped 0}}, skipped {{.Skipped}} duplicates{{end}}{{if gt .Errors 0}}, {{.Errors}} errors{{end}}</p>
+    </div>
+    <div class="actions">
+        <a href="/" class="btn btn-primary">View on Map</a>
+        <a href="/import" class="btn btn-secondary">Import More</a>
+    </div>
+</div>

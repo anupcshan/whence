@@ -16,6 +16,7 @@ func main() {
 	dbPath := flag.String("db", "./data/whence.db", "database path")
 	defaultUser := flag.String("user", "default", "default user ID")
 	configPath := flag.String("config", "", "config file path (default: ~/.config/whence/config.yaml)")
+	templatesDir := flag.String("templates", "./templates", "templates directory")
 	flag.Parse()
 
 	// Load config
@@ -35,13 +36,16 @@ func main() {
 	}
 	defer db.Close()
 
+	// Initialize templates
+	templates := NewTemplates(*templatesDir)
+
 	server := &Server{
 		db:            db,
 		defaultUserID: *defaultUser,
 	}
 
 	// Initialize Immich handlers
-	immichHandlers := NewImmichHandlers(cfg, db)
+	immichHandlers := NewImmichHandlers(cfg, db, templates)
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -51,6 +55,9 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(indexHTML)
 	})
+
+	// Import page (HTMX-powered)
+	http.HandleFunc("/import", immichHandlers.HandleImportPage)
 
 	// Existing endpoints
 	http.HandleFunc("/owntracks", server.handleOwnTracks)

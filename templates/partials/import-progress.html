@@ -1,0 +1,26 @@
+<div id="import-progress" 
+     hx-get="/api/immich/jobs/{{.JobID}}" 
+     hx-trigger="load delay:1s"
+     hx-swap="outerHTML">
+    <h3>Importing locations...</h3>
+    <div class="progress-bar">
+        <div class="fill" style="width: {{.Percent}}%">{{.Percent}}%</div>
+    </div>
+    <div class="stats">
+        <div class="stat">
+            <div class="stat-value">{{.Imported}}</div>
+            <div class="stat-label">Imported</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{.Skipped}}</div>
+            <div class="stat-label">Skipped</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value">{{.Errors}}</div>
+            <div class="stat-label">Errors</div>
+        </div>
+    </div>
+    <form hx-post="/api/immich/jobs/{{.JobID}}/cancel" hx-target="#scan-area" hx-swap="innerHTML" style="margin-top: 16px;">
+        <button type="submit" class="btn btn-secondary">Cancel</button>
+    </form>
+</div>

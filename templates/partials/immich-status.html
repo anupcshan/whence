@@ -1,0 +1,38 @@
+{{if not .Configured}}
+<div class="status-box warning">
+    <strong>Immich not configured</strong>
+    <p>Add immich section to your config.yaml:</p>
+    <pre style="margin-top: 8px; background: #f8f9fa; padding: 8px; border-radius: 4px;">immich:
+  url: "https://your-immich-server"
+  api_key: "your-api-key"</pre>
+</div>
+{{else if not .Connected}}
+<div class="status-box error">
+    <strong>Cannot connect to Immich</strong>
+    <p>{{.Error}}</p>
+</div>
+{{else}}
+<div class="status-box success">
+    <strong>Connected to Immich</strong>
+    <p>{{.URL}} (v{{.Version}})</p>
+</div>
+
+<div id="scan-form">
+    <form hx-get="/api/immich/preview" hx-target="#scan-area" hx-swap="innerHTML">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Date (optional)</label>
+                <input type="date" name="after">
+            </div>
+            <div class="form-group">
+                <label>End Date (optional)</label>
+                <input type="date" name="before">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">
+            Scan for Photos
+            <span class="htmx-indicator"> ...</span>
+        </button>
+    </form>
+</div>
+{{end}}
