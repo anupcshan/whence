@@ -69,6 +69,7 @@ func main() {
 
 	// Immich endpoints
 	http.HandleFunc("/api/immich/status", immichHandlers.HandleStatus)
+	http.HandleFunc("/api/immich/preview/start", immichHandlers.HandlePreviewStart)
 	http.HandleFunc("/api/immich/preview", immichHandlers.HandlePreview)
 	http.HandleFunc("/api/immich/import", immichHandlers.HandleImport)
 	http.HandleFunc("/api/immich/jobs", immichHandlers.HandleJobs)
@@ -79,6 +80,8 @@ func main() {
 			immichHandlers.HandleJobResume(w, r)
 		} else if strings.HasSuffix(path, "/cancel") {
 			immichHandlers.HandleJobCancel(w, r)
+		} else if strings.HasSuffix(path, "/stream") {
+			immichHandlers.HandleJobStream(w, r)
 		} else {
 			immichHandlers.HandleJob(w, r)
 		}

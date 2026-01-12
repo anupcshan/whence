@@ -18,7 +18,7 @@
 </div>
 
 <div id="scan-form">
-    <form hx-get="/api/immich/preview" hx-target="#scan-area" hx-swap="innerHTML">
+    <form hx-post="/api/immich/preview/start" hx-target="#scan-area" hx-swap="innerHTML">
         <div class="form-row">
             <div class="form-group">
                 <label>Start Date (optional)</label>

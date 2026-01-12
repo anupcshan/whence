@@ -95,6 +95,40 @@ func (h *ImmichHandlers) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandlePreviewStart returns the scan progress HTML that connects to SSE
+// POST /api/immich/preview/start
+func (h *ImmichHandlers) HandlePreviewStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !h.requireImmich(w) {
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		w.Header().Set("Content-Type", "text/html")
+		h.templates.Render(w, "partials/error.html", map[string]any{
+			"Title":     "Invalid request",
+			"Message":   err.Error(),
+			"ShowRetry": true,
+		})
+		return
+	}
+
+	afterStr := r.FormValue("after")
+	beforeStr := r.FormValue("before")
+
+	// Return the scan progress template that will connect to SSE
+	w.Header().Set("Content-Type", "text/html")
+	h.templates.Render(w, "partials/scan-progress.html", map[string]any{
+		"After":  afterStr,
+		"Before": beforeStr,
+	})
+}
+
 // HandlePreview streams preview results via SSE with HTML fragments
 // GET /api/immich/preview?after=...&before=...
 func (h *ImmichHandlers) HandlePreview(w http.ResponseWriter, r *http.Request) {
@@ -149,19 +183,25 @@ func (h *ImmichHandlers) HandlePreview(w http.ResponseWriter, r *http.Request) {
 	h.manager.Preview(ctx, config, func(progress PreviewProgress) {
 		if progress.Error != "" {
 			// Send error as HTML fragment
-			fmt.Fprintf(w, "event: error\ndata: <div class=\"status-box error\"><strong>Scan failed</strong><p>%s</p></div>\n\n", progress.Error)
+			var html stringWriter
+			h.templates.Render(&html, "partials/error.html", map[string]any{
+				"Title":     "Scan failed",
+				"Message":   progress.Error,
+				"ShowRetry": true,
+			})
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", escapeSSEData(html.String()))
 			flusher.Flush()
 			return
 		}
 
-		// Send progress update
-		percent := int(progress.Percent)
-		fmt.Fprintf(w, "event: progress\ndata: style=\"width: %d%%\">%d%%\n\n", percent, percent)
-		flusher.Flush()
-
-		// Send status update
-		fmt.Fprintf(w, "event: status\ndata: Scanned %d photos, found %d with GPS\n\n",
-			progress.Scanned, progress.PhotosWithGPS)
+		// Send progress update as HTML fragment
+		var html stringWriter
+		h.templates.Render(&html, "partials/scan-progress-update.html", map[string]any{
+			"Percent": int(progress.Percent),
+			"Scanned": progress.Scanned,
+			"WithGPS": progress.PhotosWithGPS,
+		})
+		fmt.Fprintf(w, "event: progress\ndata: %s\n\n", escapeSSEData(html.String()))
 		flusher.Flush()
 
 		if progress.Complete {
@@ -191,17 +231,22 @@ func (h *ImmichHandlers) HandlePreview(w http.ResponseWriter, r *http.Request) {
 				"Before":  beforeStr,
 			}
 
-			// Render the camera table template to a string
-			var html string
-			err := renderToString(h.templates, "partials/camera-table.html", data, &html)
+			// Render the camera table template
+			var tableHTML stringWriter
+			err := h.templates.Render(&tableHTML, "partials/camera-table.html", data)
 			if err != nil {
-				fmt.Fprintf(w, "event: error\ndata: <div class=\"status-box error\">Template error: %s</div>\n\n", err.Error())
+				var errHTML stringWriter
+				h.templates.Render(&errHTML, "partials/error.html", map[string]any{
+					"Title":     "Template error",
+					"Message":   err.Error(),
+					"ShowRetry": true,
+				})
+				fmt.Fprintf(w, "event: error\ndata: %s\n\n", escapeSSEData(errHTML.String()))
 				flusher.Flush()
 				return
 			}
 
-			// Send the complete event with the HTML
-			fmt.Fprintf(w, "event: complete\ndata: %s\n\n", escapeSSEData(html))
+			fmt.Fprintf(w, "event: complete\ndata: %s\n\n", escapeSSEData(tableHTML.String()))
 			flusher.Flush()
 		}
 	})
@@ -221,16 +266,6 @@ func escapeSSEData(s string) string {
 		}
 	}
 	return string(result)
-}
-
-// renderToString renders a template to a string
-func renderToString(t *Templates, name string, data any, out *string) error {
-	var buf stringWriter
-	if err := t.Render(&buf, name, data); err != nil {
-		return err
-	}
-	*out = buf.String()
-	return nil
 }
 
 type stringWriter struct {
@@ -542,6 +577,121 @@ func (h *ImmichHandlers) HandleJobCancel(w http.ResponseWriter, r *http.Request)
 		"Imported": imported,
 		"Skipped":  skipped,
 	})
+}
+
+// HandleJobStream streams job progress via SSE
+// GET /api/immich/jobs/{id}/stream
+func (h *ImmichHandlers) HandleJobStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract job ID from path: /api/immich/jobs/{id}/stream
+	path := r.URL.Path
+	jobID := path[len("/api/immich/jobs/") : len(path)-len("/stream")]
+
+	// Check if job exists and get initial state
+	progress, err := h.manager.GetJobProgress(jobID)
+	if err == ErrJobNotFound {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If job already completed, send final state and close
+	if progress.Status != "running" {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		h.sendJobStatusEvent(w, progress)
+		return
+	}
+
+	// Set up SSE for running job
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial progress
+	h.sendProgressEvent(w, progress)
+	flusher.Flush()
+
+	// Subscribe to updates
+	ch, unsubscribe := h.manager.Subscribe(jobID)
+	defer unsubscribe()
+
+	ctx := r.Context()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		case update, ok := <-ch:
+			if !ok {
+				// Channel closed, job finished
+				return
+			}
+
+			if update.Status == "running" {
+				h.sendProgressEvent(w, &update)
+			} else {
+				h.sendJobStatusEvent(w, &update)
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// sendProgressEvent sends an SSE progress event with HTML fragment
+func (h *ImmichHandlers) sendProgressEvent(w http.ResponseWriter, progress *ImportProgress) {
+	var html stringWriter
+	h.templates.Render(&html, "partials/import-progress-update.html", map[string]any{
+		"Imported": progress.Imported,
+		"Skipped":  progress.Skipped,
+		"Errors":   progress.Errors,
+	})
+	fmt.Fprintf(w, "event: progress\ndata: %s\n\n", escapeSSEData(html.String()))
+}
+
+// sendJobStatusEvent sends the final SSE event based on job status
+func (h *ImmichHandlers) sendJobStatusEvent(w http.ResponseWriter, progress *ImportProgress) {
+	var html stringWriter
+	var templateName string
+	data := map[string]any{
+		"Imported": progress.Imported,
+		"Skipped":  progress.Skipped,
+		"Errors":   progress.Errors,
+	}
+
+	switch progress.Status {
+	case "completed":
+		templateName = "partials/import-complete.html"
+	case "cancelled":
+		templateName = "partials/import-cancelled.html"
+	case "failed":
+		templateName = "partials/error.html"
+		data["Title"] = "Import failed"
+		data["Message"] = progress.Error
+		data["ShowRetry"] = true
+	default:
+		return
+	}
+
+	h.templates.Render(&html, templateName, data)
+	fmt.Fprintf(w, "event: complete\ndata: %s\n\n", escapeSSEData(html.String()))
 }
 
 // HandleThumbnail proxies thumbnail requests to Immich

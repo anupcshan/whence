@@ -1,10 +1,11 @@
-<div id="scan-progress"
-     hx-get="{{.PollURL}}"
-     hx-trigger="load delay:500ms"
-     hx-swap="outerHTML">
+<div id="scan-progress" hx-ext="sse" sse-connect="/api/immich/preview?after={{.After}}&before={{.Before}}">
     <h3>Scanning photos...</h3>
-    <div class="progress-bar">
-        <div class="fill" style="width: {{.Percent}}%">{{.Percent}}%</div>
+    <div id="scan-content" sse-swap="progress" hx-swap="innerHTML">
+        <div class="progress-bar">
+            <div class="fill" style="width: 0%">0%</div>
+        </div>
+        <p>Starting scan...</p>
     </div>
-    <p>Scanned {{.Scanned}} photos, found {{.WithGPS}} with GPS</p>
+    <div sse-swap="complete" hx-swap="outerHTML" hx-target="#scan-progress"></div>
+    <div sse-swap="error" hx-swap="outerHTML" hx-target="#scan-progress"></div>
 </div>

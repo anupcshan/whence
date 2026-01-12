@@ -52,24 +52,81 @@ type ImportProgress struct {
 
 // BackfillManager manages import jobs
 type BackfillManager struct {
-	db     *DB
-	client *ImmichClient
-	jobs   map[string]context.CancelFunc
-	mu     sync.RWMutex
+	db      *DB
+	client  *ImmichClient
+	jobs    map[string]context.CancelFunc
+	streams map[string][]chan ImportProgress // SSE subscribers per job
+	mu      sync.RWMutex
 }
 
 // NewBackfillManager creates a new backfill manager
 func NewBackfillManager(db *DB, client *ImmichClient) *BackfillManager {
 	bm := &BackfillManager{
-		db:     db,
-		client: client,
-		jobs:   make(map[string]context.CancelFunc),
+		db:      db,
+		client:  client,
+		jobs:    make(map[string]context.CancelFunc),
+		streams: make(map[string][]chan ImportProgress),
 	}
 
 	// Mark any previously running jobs as interrupted
 	bm.markInterruptedJobs()
 
 	return bm
+}
+
+// Subscribe returns a channel that receives progress updates for a job.
+// The returned function should be called to unsubscribe when done.
+func (bm *BackfillManager) Subscribe(jobID string) (<-chan ImportProgress, func()) {
+	ch := make(chan ImportProgress, 10)
+
+	bm.mu.Lock()
+	bm.streams[jobID] = append(bm.streams[jobID], ch)
+	bm.mu.Unlock()
+
+	unsubscribe := func() {
+		bm.mu.Lock()
+		defer bm.mu.Unlock()
+
+		subs := bm.streams[jobID]
+		for i, sub := range subs {
+			if sub == ch {
+				// Remove from slice and close
+				bm.streams[jobID] = append(subs[:i], subs[i+1:]...)
+				close(ch)
+				return
+			}
+		}
+		// Channel not found - already closed by closeStreams()
+	}
+
+	return ch, unsubscribe
+}
+
+// broadcast sends progress to all subscribers (non-blocking)
+func (bm *BackfillManager) broadcast(jobID string, progress ImportProgress) {
+	bm.mu.RLock()
+	subs := bm.streams[jobID]
+	bm.mu.RUnlock()
+
+	for _, ch := range subs {
+		select {
+		case ch <- progress:
+		default:
+			// Drop if channel is full (slow consumer)
+		}
+	}
+}
+
+// closeStreams closes all subscriber channels for a job
+func (bm *BackfillManager) closeStreams(jobID string) {
+	bm.mu.Lock()
+	subs := bm.streams[jobID]
+	delete(bm.streams, jobID)
+	bm.mu.Unlock()
+
+	for _, ch := range subs {
+		close(ch)
+	}
 }
 
 // markInterruptedJobs marks any running jobs from previous sessions as interrupted
@@ -296,12 +353,24 @@ func (bm *BackfillManager) runImport(ctx context.Context, jobID string, config I
 		bm.mu.Lock()
 		delete(bm.jobs, jobID)
 		bm.mu.Unlock()
+		bm.closeStreams(jobID)
 	}()
 
 	job, err := bm.db.GetImportJob(jobID)
 	if err != nil || job == nil {
 		log.Printf("import job %s: failed to get job: %v", jobID, err)
 		return
+	}
+
+	// Helper to build and broadcast current progress
+	broadcastProgress := func() {
+		bm.broadcast(jobID, ImportProgress{
+			JobID:    jobID,
+			Status:   job.Status,
+			Imported: job.Imported,
+			Skipped:  job.Skipped,
+			Errors:   job.Errors,
+		})
 	}
 
 	// Build camera filter set
@@ -325,6 +394,7 @@ func (bm *BackfillManager) runImport(ctx context.Context, jobID string, config I
 			now := time.Now().Unix()
 			job.CompletedAt = &now
 			bm.db.UpdateImportJob(*job)
+			broadcastProgress()
 			return
 		default:
 		}
@@ -338,6 +408,11 @@ func (bm *BackfillManager) runImport(ctx context.Context, jobID string, config I
 			now := time.Now().Unix()
 			job.CompletedAt = &now
 			bm.db.UpdateImportJob(*job)
+			bm.broadcast(jobID, ImportProgress{
+				JobID:  jobID,
+				Status: job.Status,
+				Error:  errMsg,
+			})
 			log.Printf("import job %s: search failed on page %d: %v", jobID, page, err)
 			return
 		}
@@ -393,6 +468,9 @@ func (bm *BackfillManager) runImport(ctx context.Context, jobID string, config I
 			log.Printf("import job %s: failed to checkpoint: %v", jobID, err)
 		}
 
+		// Broadcast progress to SSE subscribers
+		broadcastProgress()
+
 		if !hasMore {
 			break
 		}
@@ -405,6 +483,9 @@ func (bm *BackfillManager) runImport(ctx context.Context, jobID string, config I
 	if err := bm.db.UpdateImportJob(*job); err != nil {
 		log.Printf("import job %s: failed to mark complete: %v", jobID, err)
 	}
+
+	// Final broadcast
+	broadcastProgress()
 
 	// Rebuild paths after import
 	if job.Imported > 0 {
