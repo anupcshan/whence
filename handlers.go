@@ -512,8 +512,8 @@ func (s *Server) handleAPIPhotos(w http.ResponseWriter, r *http.Request) {
 		keyPhoto := cluster.photos[len(cluster.photos)-1]
 
 		response = append(response, PhotoCluster{
-			Lat:          cluster.lat,
-			Lon:          cluster.lon,
+			Lat:          keyPhoto.Lat,
+			Lon:          keyPhoto.Lon,
 			Count:        len(cluster.photos),
 			ThumbnailURL: fmt.Sprintf("/api/immich/assets/%s/thumbnail", keyPhoto.SourceID),
 			PopupHTML:    buildPopupHTML(cluster.photos),
