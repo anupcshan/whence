@@ -51,18 +51,7 @@
             width: 180px;
         }
         #controls label { display: block; margin-bottom: 4px; font-size: 12px; color: #666; }
-        #controls input { width: 100%; margin-bottom: 10px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; }
-        #controls button { 
-            width: 100%; 
-            padding: 8px; 
-            cursor: pointer;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-weight: 500;
-        }
-        #controls button:hover { background: #0056b3; }
+        #controls input { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; }
         #status {
             position: absolute;
             bottom: 10px;
@@ -90,11 +79,8 @@
 
     <div id="map"></div>
     <div id="controls">
-        <label>Start Date</label>
-        <input type="date" id="startDate">
-        <label>End Date</label>
-        <input type="date" id="endDate">
-        <button id="applyFilter">Apply Filter</button>
+        <label>Date</label>
+        <input type="date" id="dateFilter">
     </div>
     <div id="status">Paths: 0, Points: 0</div>
 
@@ -279,15 +265,12 @@
 
             let url = `/api/paths?bbox=${bbox}`;
 
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-
-            if (startDate) {
-                url += `&start=${Math.floor(new Date(startDate).getTime() / 1000)}`;
-            }
-            if (endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
+            const date = document.getElementById('dateFilter').value;
+            if (date) {
+                const [y, m, d] = date.split('-').map(Number);
+                const start = new Date(y, m - 1, d);
+                const end = new Date(y, m - 1, d, 23, 59, 59, 999);
+                url += `&start=${Math.floor(start.getTime() / 1000)}`;
                 url += `&end=${Math.floor(end.getTime() / 1000)}`;
             }
 
@@ -298,7 +281,9 @@
         }
 
         map.on('moveend', fetchPaths);
-        document.getElementById('applyFilter').addEventListener('click', fetchPaths);
+        const now = new Date();
+        document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        document.getElementById('dateFilter').addEventListener('change', fetchPaths);
 
         fetch('/api/latest')
             .then(r => r.json())
