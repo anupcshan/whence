@@ -134,6 +134,52 @@
         // Minimum time gap (seconds) to consider a point as a "stop"
         const STOP_GAP_SECONDS = 10 * 60; // 10 minutes
 
+        // Fetch and display photo source info in a popup
+        async function loadPhotoSource(marker, timestamp) {
+            try {
+                const resp = await fetch(`/api/location/source?timestamp=${timestamp}`);
+                const source = await resp.json();
+
+                if (!source) return;
+
+                const popup = marker.getPopup();
+                const currentContent = popup.getContent();
+
+                let photoHtml = '<div style="margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px;">';
+
+                // Add thumbnail
+                photoHtml += `<a href="${source.web_url}" target="_blank" rel="noopener" style="display: block;">`;
+                photoHtml += `<img src="/api/immich/assets/${source.source_id}/thumbnail" `;
+                photoHtml += `style="max-width: 200px; max-height: 150px; border-radius: 4px; cursor: pointer;" `;
+                photoHtml += `onerror="this.style.display='none'" />`;
+                photoHtml += `</a>`;
+
+                // Add metadata
+                if (source.filename) {
+                    photoHtml += `<div style="font-size: 11px; color: #666; margin-top: 4px;">`;
+                    photoHtml += source.filename;
+                    if (source.make || source.model) {
+                        photoHtml += `<br>${[source.make, source.model].filter(Boolean).join(' ')}`;
+                    }
+                    photoHtml += `</div>`;
+                }
+
+                // Add link to Immich
+                if (source.web_url) {
+                    photoHtml += `<a href="${source.web_url}" target="_blank" rel="noopener" `;
+                    photoHtml += `style="font-size: 11px; color: #007bff; text-decoration: none;">`;
+                    photoHtml += `View in Immich &rarr;</a>`;
+                }
+
+                photoHtml += '</div>';
+
+                popup.setContent(currentContent + photoHtml);
+                popup.update();
+            } catch (err) {
+                console.error('Failed to load photo source:', err);
+            }
+        }
+
         function renderPaths(data) {
             pathsLayer.clearLayers();
             currentLayer.clearLayers();
@@ -173,7 +219,7 @@
                         }
 
                         if (i === 0) {
-                            L.circleMarker([point.lat, point.lon], {
+                            const startMarker = L.circleMarker([point.lat, point.lon], {
                                 radius: 7,
                                 fillColor: '#27ae60',
                                 color: '#1e8449',
@@ -182,12 +228,13 @@
                                 fillOpacity: 0.9
                             }).bindPopup(`<strong>Start</strong><br>${formatDateTime(point.timestamp)}`)
                               .addTo(pathsLayer);
+                            startMarker.on('popupopen', () => loadPhotoSource(startMarker, point.timestamp));
                         } else if (isStop) {
-                            const popupContent = stopDuration > 0 
+                            const popupContent = stopDuration > 0
                                 ? `<strong>Stopped ${formatDuration(stopDuration)}</strong><br>${formatDateTime(point.timestamp)}`
                                 : `<strong>End</strong><br>${formatDateTime(point.timestamp)}`;
 
-                            L.circleMarker([point.lat, point.lon], {
+                            const stopMarker = L.circleMarker([point.lat, point.lon], {
                                 radius: 7,
                                 fillColor: '#e74c3c',
                                 color: '#c0392b',
@@ -196,6 +243,7 @@
                                 fillOpacity: 0.9
                             }).bindPopup(popupContent)
                               .addTo(pathsLayer);
+                            stopMarker.on('popupopen', () => loadPhotoSource(stopMarker, point.timestamp));
                         }
                     }
                 });

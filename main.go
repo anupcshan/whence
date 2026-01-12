@@ -66,6 +66,7 @@ func main() {
 	http.HandleFunc("/api/paths", server.handleAPIPaths)
 	http.HandleFunc("/api/paths/rebuild", server.handleAPIPathsRebuild)
 	http.HandleFunc("/api/latest", server.handleAPILatest)
+	http.HandleFunc("/api/location/source", server.handleAPILocationSource)
 
 	// Immich endpoints
 	http.HandleFunc("/api/immich/status", immichHandlers.HandleStatus)

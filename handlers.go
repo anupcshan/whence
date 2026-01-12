@@ -311,3 +311,70 @@ func (s *Server) handleAPILatest(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(loc)
 }
+
+// LocationSourceResponse is the API response for /api/location/source
+type LocationSourceResponse struct {
+	SourceType string `json:"source_type"`
+	SourceID   string `json:"source_id"`
+	WebURL     string `json:"web_url,omitempty"`
+	Filename   string `json:"filename,omitempty"`
+	Make       string `json:"make,omitempty"`
+	Model      string `json:"model,omitempty"`
+}
+
+// GET /api/location/source - Returns source metadata for a location point
+func (s *Server) handleAPILocationSource(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tsStr := r.URL.Query().Get("timestamp")
+	deviceID := r.URL.Query().Get("device_id")
+
+	if tsStr == "" {
+		http.Error(w, "timestamp required", http.StatusBadRequest)
+		return
+	}
+
+	timestamp, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid timestamp", http.StatusBadRequest)
+		return
+	}
+
+	var source *LocationSource
+	if deviceID != "" {
+		source, err = s.db.GetLocationSource(timestamp, deviceID)
+	} else {
+		source, err = s.db.GetLocationSourceByTimestamp(timestamp)
+	}
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if source == nil {
+		w.Write([]byte("null"))
+		return
+	}
+
+	// Parse metadata JSON to extract fields
+	resp := LocationSourceResponse{
+		SourceType: source.SourceType,
+		SourceID:   source.SourceID,
+	}
+
+	if source.Metadata != "" {
+		var meta map[string]string
+		if err := json.Unmarshal([]byte(source.Metadata), &meta); err == nil {
+			resp.WebURL = meta["web_url"]
+			resp.Filename = meta["filename"]
+			resp.Make = meta["make"]
+			resp.Model = meta["model"]
+		}
+	}
+
+	json.NewEncoder(w).Encode(resp)
+}

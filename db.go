@@ -201,6 +201,26 @@ func (db *DB) GetLocationSource(timestamp int64, deviceID string) (*LocationSour
 	return &src, nil
 }
 
+// GetLocationSourceByTimestamp retrieves source metadata by timestamp only
+// Used when device_id is not available (e.g., from path points)
+func (db *DB) GetLocationSourceByTimestamp(timestamp int64) (*LocationSource, error) {
+	row := db.QueryRow(
+		`SELECT timestamp, device_id, source_type, source_id, metadata FROM location_sources WHERE timestamp = ? LIMIT 1`,
+		timestamp,
+	)
+	var src LocationSource
+	var metadata sql.NullString
+	err := row.Scan(&src.Timestamp, &src.DeviceID, &src.SourceType, &src.SourceID, &metadata)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	src.Metadata = metadata.String
+	return &src, nil
+}
+
 // ImportJob represents a background import job
 type ImportJob struct {
 	ID          string  `json:"id"`
@@ -220,7 +240,7 @@ type ImportJob struct {
 // CreateImportJob creates a new import job record
 func (db *DB) CreateImportJob(job ImportJob) error {
 	_, err := db.Exec(
-		`INSERT INTO import_jobs (id, status, started_at, total_assets, processed, imported, skipped, errors, last_page, config_json) 
+		`INSERT INTO import_jobs (id, status, started_at, total_assets, processed, imported, skipped, errors, last_page, config_json)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Status, job.StartedAt, job.Total, job.Processed, job.Imported, job.Skipped, job.Errors, job.LastPage, job.ConfigJSON,
 	)
@@ -230,7 +250,7 @@ func (db *DB) CreateImportJob(job ImportJob) error {
 // GetImportJob retrieves an import job by ID
 func (db *DB) GetImportJob(id string) (*ImportJob, error) {
 	row := db.QueryRow(
-		`SELECT id, status, started_at, completed_at, total_assets, processed, imported, skipped, errors, last_page, config_json, last_error 
+		`SELECT id, status, started_at, completed_at, total_assets, processed, imported, skipped, errors, last_page, config_json, last_error
 		 FROM import_jobs WHERE id = ?`, id,
 	)
 	var job ImportJob
@@ -268,7 +288,7 @@ func (db *DB) UpdateImportJob(job ImportJob) error {
 // ListImportJobs returns all import jobs, most recent first
 func (db *DB) ListImportJobs() ([]ImportJob, error) {
 	rows, err := db.Query(
-		`SELECT id, status, started_at, completed_at, total_assets, processed, imported, skipped, errors, last_page, config_json, last_error 
+		`SELECT id, status, started_at, completed_at, total_assets, processed, imported, skipped, errors, last_page, config_json, last_error
 		 FROM import_jobs ORDER BY started_at DESC LIMIT 50`,
 	)
 	if err != nil {
