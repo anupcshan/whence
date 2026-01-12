@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"html"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -350,5 +353,180 @@ func (s *Server) handleAPILocationSource(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	json.NewEncoder(w).Encode(resp)
+}
+
+// PhotoCluster represents a group of nearby photos for the map
+type PhotoCluster struct {
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	Count        int     `json:"count"`
+	ThumbnailURL string  `json:"thumbnail_url"`
+	PopupHTML    string  `json:"popup_html"`
+}
+
+// PhotosResponse is the response for /api/photos
+type PhotosResponse struct {
+	Clusters []PhotoCluster `json:"clusters"`
+}
+
+// clusterRadiusFromBBox calculates clustering radius based on viewport size
+func clusterRadiusFromBBox(bbox BBox) float64 {
+	latSpan := bbox.NeLat - bbox.SwLat
+	lonSpan := bbox.NeLng - bbox.SwLng
+
+	minSpan := latSpan
+	if lonSpan < minSpan {
+		minSpan = lonSpan
+	}
+
+	// Use 2% of viewport as cluster radius
+	radius := minSpan * 0.02
+
+	// Clamp to reasonable bounds
+	// Min: ~50m (0.0005 degrees)
+	// Max: ~10km (0.1 degrees)
+	if radius < 0.0005 {
+		radius = 0.0005
+	}
+	if radius > 0.1 {
+		radius = 0.1
+	}
+
+	return radius
+}
+
+// photoDist calculates approximate distance between two points in degrees
+func photoDist(lat1, lon1, lat2, lon2 float64) float64 {
+	dLat := lat2 - lat1
+	dLon := lon2 - lon1
+	return math.Sqrt(dLat*dLat + dLon*dLon)
+}
+
+// photoClusterData is an internal struct for building clusters
+type photoClusterData struct {
+	lat    float64
+	lon    float64
+	photos []PhotoLocation
+}
+
+// clusterPhotos groups photos by proximity
+func clusterPhotos(photos []PhotoLocation, radius float64) []photoClusterData {
+	var clusters []photoClusterData
+
+	for _, photo := range photos {
+		added := false
+		for i := range clusters {
+			if photoDist(clusters[i].lat, clusters[i].lon, photo.Lat, photo.Lon) < radius {
+				// Add to existing cluster and update centroid
+				n := float64(len(clusters[i].photos))
+				clusters[i].lat = (clusters[i].lat*n + photo.Lat) / (n + 1)
+				clusters[i].lon = (clusters[i].lon*n + photo.Lon) / (n + 1)
+				clusters[i].photos = append(clusters[i].photos, photo)
+				added = true
+				break
+			}
+		}
+		if !added {
+			clusters = append(clusters, photoClusterData{
+				lat:    photo.Lat,
+				lon:    photo.Lon,
+				photos: []PhotoLocation{photo},
+			})
+		}
+	}
+
+	return clusters
+}
+
+// buildPopupHTML generates the HTML for the photo grid popup
+func buildPopupHTML(photos []PhotoLocation) string {
+	var popup strings.Builder
+	popup.WriteString(`<div class="photo-grid">`)
+	for _, photo := range photos {
+		previewURL := fmt.Sprintf("/api/immich/assets/%s/thumbnail?size=preview", photo.SourceID)
+		popup.WriteString(fmt.Sprintf(
+			`<a href="%s" target="_blank" rel="noopener" title="%s"><img src="%s" alt=""></a>`,
+			html.EscapeString(photo.WebURL),
+			html.EscapeString(photo.Filename),
+			previewURL,
+		))
+	}
+	popup.WriteString(`</div>`)
+	return popup.String()
+}
+
+// GET /api/photos - Returns clustered photos for a time range and bounding box
+func (s *Server) handleAPIPhotos(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse time range
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	if startStr == "" || endStr == "" {
+		http.Error(w, "start and end timestamps required", http.StatusBadRequest)
+		return
+	}
+
+	start, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid start timestamp", http.StatusBadRequest)
+		return
+	}
+	end, err := strconv.ParseInt(endStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid end timestamp", http.StatusBadRequest)
+		return
+	}
+
+	// Parse bbox for clustering radius
+	bboxStr := r.URL.Query().Get("bbox")
+	if bboxStr == "" {
+		http.Error(w, "bbox required", http.StatusBadRequest)
+		return
+	}
+	bbox, err := parseBBox(bboxStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Query photos from database
+	photos, err := s.db.QueryPhotoLocations(start, end)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Cluster photos based on viewport
+	radius := clusterRadiusFromBBox(bbox)
+	clusters := clusterPhotos(photos, radius)
+
+	// Build response with pre-rendered HTML
+	var response []PhotoCluster
+	for _, cluster := range clusters {
+		// Key photo is the last one (most recent, since photos are sorted by timestamp)
+		keyPhoto := cluster.photos[len(cluster.photos)-1]
+
+		response = append(response, PhotoCluster{
+			Lat:          cluster.lat,
+			Lon:          cluster.lon,
+			Count:        len(cluster.photos),
+			ThumbnailURL: fmt.Sprintf("/api/immich/assets/%s/thumbnail", keyPhoto.SourceID),
+			PopupHTML:    buildPopupHTML(cluster.photos),
+		})
+	}
+
+	resp := PhotosResponse{
+		Clusters: response,
+	}
+	if resp.Clusters == nil {
+		resp.Clusters = []PhotoCluster{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }

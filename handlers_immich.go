@@ -716,10 +716,13 @@ func (h *ImmichHandlers) HandleThumbnail(w http.ResponseWriter, r *http.Request)
 	}
 	assetID := path[len(prefix) : len(path)-len(suffix)]
 
+	// Get optional size param (thumbnail, preview, or fullsize)
+	size := r.URL.Query().Get("size")
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	data, contentType, err := h.client.GetThumbnail(ctx, assetID)
+	data, contentType, err := h.client.GetThumbnail(ctx, assetID, size)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -371,4 +372,49 @@ func (db *DB) SetSyncState(lastSync int64) error {
 		lastSync,
 	)
 	return err
+}
+
+// PhotoLocation represents a photo with GPS coordinates from Immich
+type PhotoLocation struct {
+	Timestamp int64   `json:"timestamp"`
+	Lat       float64 `json:"lat"`
+	Lon       float64 `json:"lon"`
+	SourceID  string  `json:"source_id"`
+	WebURL    string  `json:"web_url"`
+	Filename  string  `json:"filename"`
+}
+
+// QueryPhotoLocations returns all photos with GPS coordinates in a time range
+func (db *DB) QueryPhotoLocations(start, end int64) ([]PhotoLocation, error) {
+	rows, err := db.Query(`
+		SELECT l.timestamp, l.lat, l.lon, ls.source_id, ls.metadata
+		FROM locations l
+		JOIN location_sources ls ON l.timestamp = ls.timestamp AND l.device_id = ls.device_id
+		WHERE l.timestamp >= ? AND l.timestamp <= ?
+		ORDER BY l.timestamp`,
+		start, end,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var photos []PhotoLocation
+	for rows.Next() {
+		var p PhotoLocation
+		var metadata sql.NullString
+		if err := rows.Scan(&p.Timestamp, &p.Lat, &p.Lon, &p.SourceID, &metadata); err != nil {
+			return nil, err
+		}
+		// Parse metadata JSON for web_url and filename
+		if metadata.Valid && metadata.String != "" {
+			var meta map[string]string
+			if json.Unmarshal([]byte(metadata.String), &meta) == nil {
+				p.WebURL = meta["web_url"]
+				p.Filename = meta["filename"]
+			}
+		}
+		photos = append(photos, p)
+	}
+	return photos, rows.Err()
 }

@@ -214,8 +214,13 @@ func (c *ImmichClient) SearchAssets(ctx context.Context, opts SearchOptions) ([]
 }
 
 // GetThumbnail fetches a thumbnail for an asset
-func (c *ImmichClient) GetThumbnail(ctx context.Context, assetID string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/api/assets/"+assetID+"/thumbnail", nil)
+// size can be "thumbnail" (default), "preview", or "fullsize"
+func (c *ImmichClient) GetThumbnail(ctx context.Context, assetID, size string) ([]byte, string, error) {
+	url := c.BaseURL + "/api/assets/" + assetID + "/thumbnail"
+	if size != "" && size != "thumbnail" {
+		url += "?size=" + size
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, "", err
 	}

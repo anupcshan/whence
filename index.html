@@ -69,6 +69,50 @@
             100% { transform: scale(1); opacity: 1; }
         }
         .current-marker { animation: pulse 2s infinite; }
+
+        /* Photo markers */
+        .photo-marker { position: relative; }
+        .photo-thumb {
+            width: 48px;
+            height: 48px;
+            background-size: cover;
+            background-position: center;
+            border: 2px solid white;
+            border-radius: 4px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        }
+        .photo-badge {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            background: rgba(0,0,0,0.75);
+            color: white;
+            font-size: 10px;
+            padding: 1px 4px;
+            border-radius: 3px 0 4px 0;
+            font-weight: 500;
+        }
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 120px);
+            gap: 6px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 4px;
+        }
+        .photo-grid a {
+            display: block;
+            width: 120px;
+            height: 120px;
+        }
+        .photo-grid img {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .photo-grid img:hover { opacity: 0.85; }
     </style>
 </head>
 <body>
@@ -94,6 +138,7 @@
 
         let pathsLayer = L.layerGroup().addTo(map);
         let currentLayer = L.layerGroup().addTo(map);
+        let photosLayer = L.layerGroup().addTo(map);
 
         function formatDateTime(timestamp) {
             const d = new Date(timestamp * 1000);
@@ -302,6 +347,42 @@
             }
         }
 
+        async function fetchPhotos() {
+            const date = document.getElementById('dateFilter').value;
+            if (!date) {
+                photosLayer.clearLayers();
+                return;
+            }
+
+            const [y, m, d] = date.split('-').map(Number);
+            const start = Math.floor(new Date(y, m - 1, d).getTime() / 1000);
+            const end = Math.floor(new Date(y, m - 1, d, 23, 59, 59, 999).getTime() / 1000);
+            const bounds = map.getBounds();
+            const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()].join(',');
+
+            try {
+                const resp = await fetch(`/api/photos?start=${start}&end=${end}&bbox=${bbox}`);
+                const data = await resp.json();
+
+                photosLayer.clearLayers();
+                (data.clusters || []).forEach(c => {
+                    const icon = L.divIcon({
+                        className: 'photo-marker',
+                        html: `<div class="photo-thumb" style="background-image: url('${c.thumbnail_url}')">
+                                 ${c.count > 1 ? `<span class="photo-badge">+${c.count - 1}</span>` : ''}
+                               </div>`,
+                        iconSize: [48, 48],
+                        iconAnchor: [24, 24]
+                    });
+                    L.marker([c.lat, c.lon], { icon, zIndexOffset: 500 })
+                      .bindPopup(c.popup_html, { maxWidth: 420, maxHeight: 450 })
+                      .addTo(photosLayer);
+                });
+            } catch (err) {
+                console.error('Failed to fetch photos:', err);
+            }
+        }
+
         function fetchPaths() {
             const bounds = map.getBounds();
             const bbox = [
@@ -329,7 +410,11 @@
 
         function onDateChange() {
             const date = document.getElementById('dateFilter').value;
-            if (!date) return fetchPaths();
+            if (!date) {
+                fetchPaths();
+                fetchPhotos();
+                return;
+            }
 
             const [y, m, d] = date.split('-').map(Number);
             const start = Math.floor(new Date(y, m - 1, d).getTime() / 1000);
@@ -345,12 +430,19 @@
                         ], { padding: [20, 20] });
                     } else {
                         fetchPaths();
+                        fetchPhotos();
                     }
                 })
-                .catch(() => fetchPaths());
+                .catch(() => {
+                    fetchPaths();
+                    fetchPhotos();
+                });
         }
 
-        map.on('moveend', fetchPaths);
+        map.on('moveend', () => {
+            fetchPaths();
+            fetchPhotos();
+        });
         const now = new Date();
         document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
         document.getElementById('dateFilter').addEventListener('change', onDateChange);
