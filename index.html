@@ -312,7 +312,6 @@
             ].join(',');
 
             let url = `/api/paths?bbox=${bbox}`;
-
             const date = document.getElementById('dateFilter').value;
             if (date) {
                 const [y, m, d] = date.split('-').map(Number);
@@ -330,12 +329,13 @@
 
         function onDateChange() {
             const date = document.getElementById('dateFilter').value;
-            if (!date) {
-                fetchPaths();
-                return;
-            }
+            if (!date) return fetchPaths();
 
-            fetch(`/api/bounds?date=${date}`)
+            const [y, m, d] = date.split('-').map(Number);
+            const start = Math.floor(new Date(y, m - 1, d).getTime() / 1000);
+            const end = Math.floor(new Date(y, m - 1, d, 23, 59, 59, 999).getTime() / 1000);
+
+            fetch(`/api/bounds?start=${start}&end=${end}`)
                 .then(r => r.json())
                 .then(bounds => {
                     if (bounds) {
@@ -355,16 +355,8 @@
         document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
         document.getElementById('dateFilter').addEventListener('change', onDateChange);
 
-        fetch('/api/latest')
-            .then(r => r.json())
-            .then(loc => {
-                if (loc) {
-                    map.setView([loc.lat, loc.lon], 13);
-                } else {
-                    fetchPaths();
-                }
-            })
-            .catch(() => fetchPaths());
+        // Initial load: fit to today's bounds
+        onDateChange();
     </script>
 </body>
 </html>

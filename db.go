@@ -209,11 +209,11 @@ type Bounds struct {
 	MaxLon float64 `json:"max_lon"`
 }
 
-// GetBoundsForDate returns the combined bounding box for all paths on a given date
-func (db *DB) GetBoundsForDate(date string) (*Bounds, error) {
+// GetBoundsForTimestampRange returns the bounding box for all locations in a time range
+func (db *DB) GetBoundsForTimestampRange(start, end int64) (*Bounds, error) {
 	row := db.QueryRow(
-		`SELECT MIN(min_lat), MAX(max_lat), MIN(min_lon), MAX(max_lon) FROM paths WHERE date = ?`,
-		date,
+		`SELECT MIN(lat), MAX(lat), MIN(lon), MAX(lon) FROM locations WHERE timestamp >= ? AND timestamp <= ?`,
+		start, end,
 	)
 	var minLat, maxLat, minLon, maxLon sql.NullFloat64
 	err := row.Scan(&minLat, &maxLat, &minLon, &maxLon)
@@ -221,7 +221,7 @@ func (db *DB) GetBoundsForDate(date string) (*Bounds, error) {
 		return nil, err
 	}
 	if !minLat.Valid {
-		return nil, nil // No paths for this date
+		return nil, nil
 	}
 	return &Bounds{
 		MinLat: minLat.Float64,

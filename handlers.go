@@ -247,41 +247,32 @@ func (s *Server) handleAPIPathsRebuild(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// GET /api/latest - Returns the most recent location
-func (s *Server) handleAPILatest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	loc, err := s.db.LatestLocation()
-	if err != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if loc == nil {
-		w.Write([]byte("null"))
-		return
-	}
-	json.NewEncoder(w).Encode(loc)
-}
-
-// GET /api/bounds - Returns the bounding box for paths on a given date
+// GET /api/bounds - Returns the bounding box for locations in a time range
 func (s *Server) handleAPIBounds(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	date := r.URL.Query().Get("date")
-	if date == "" {
-		http.Error(w, "date required (YYYY-MM-DD)", http.StatusBadRequest)
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	if startStr == "" || endStr == "" {
+		http.Error(w, "start and end timestamps required", http.StatusBadRequest)
 		return
 	}
 
-	bounds, err := s.db.GetBoundsForDate(date)
+	start, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid start timestamp", http.StatusBadRequest)
+		return
+	}
+	end, err := strconv.ParseInt(endStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid end timestamp", http.StatusBadRequest)
+		return
+	}
+
+	bounds, err := s.db.GetBoundsForTimestampRange(start, end)
 	if err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
