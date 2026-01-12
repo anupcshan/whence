@@ -328,10 +328,32 @@
                 .catch(err => console.error('Failed to fetch paths:', err));
         }
 
+        function onDateChange() {
+            const date = document.getElementById('dateFilter').value;
+            if (!date) {
+                fetchPaths();
+                return;
+            }
+
+            fetch(`/api/bounds?date=${date}`)
+                .then(r => r.json())
+                .then(bounds => {
+                    if (bounds) {
+                        map.fitBounds([
+                            [bounds.min_lat, bounds.min_lon],
+                            [bounds.max_lat, bounds.max_lon]
+                        ], { padding: [20, 20] });
+                    } else {
+                        fetchPaths();
+                    }
+                })
+                .catch(() => fetchPaths());
+        }
+
         map.on('moveend', fetchPaths);
         const now = new Date();
         document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        document.getElementById('dateFilter').addEventListener('change', fetchPaths);
+        document.getElementById('dateFilter').addEventListener('change', onDateChange);
 
         fetch('/api/latest')
             .then(r => r.json())

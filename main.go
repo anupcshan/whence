@@ -62,10 +62,10 @@ func main() {
 	// Existing endpoints
 	http.HandleFunc("/owntracks", server.handleOwnTracks)
 	http.HandleFunc("/gpslogger", server.handleGPSLogger)
-	http.HandleFunc("/api/timeline", server.handleAPITimeline) // deprecated
 	http.HandleFunc("/api/paths", server.handleAPIPaths)
 	http.HandleFunc("/api/paths/rebuild", server.handleAPIPathsRebuild)
 	http.HandleFunc("/api/latest", server.handleAPILatest)
+	http.HandleFunc("/api/bounds", server.handleAPIBounds)
 	http.HandleFunc("/api/location/source", server.handleAPILocationSource)
 
 	// Immich endpoints

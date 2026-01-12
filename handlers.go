@@ -247,50 +247,6 @@ func (s *Server) handleAPIPathsRebuild(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// GET /api/timeline - Returns processed timeline with stays and paths
-// DEPRECATED: Use /api/paths instead
-func (s *Server) handleAPITimeline(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	bboxStr := r.URL.Query().Get("bbox")
-	if bboxStr == "" {
-		http.Error(w, "bbox required", http.StatusBadRequest)
-		return
-	}
-
-	bbox, err := parseBBox(bboxStr)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	var start, end *int64
-	if startStr := r.URL.Query().Get("start"); startStr != "" {
-		if v, err := strconv.ParseInt(startStr, 10, 64); err == nil {
-			start = &v
-		}
-	}
-	if endStr := r.URL.Query().Get("end"); endStr != "" {
-		if v, err := strconv.ParseInt(endStr, 10, 64); err == nil {
-			end = &v
-		}
-	}
-
-	locations, err := s.db.QueryLocations(bbox, start, end)
-	if err != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
-	}
-
-	timeline := ProcessLocations(locations)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(timeline)
-}
-
 // GET /api/latest - Returns the most recent location
 func (s *Server) handleAPILatest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -310,6 +266,33 @@ func (s *Server) handleAPILatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(loc)
+}
+
+// GET /api/bounds - Returns the bounding box for paths on a given date
+func (s *Server) handleAPIBounds(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		http.Error(w, "date required (YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+
+	bounds, err := s.db.GetBoundsForDate(date)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if bounds == nil {
+		w.Write([]byte("null"))
+		return
+	}
+	json.NewEncoder(w).Encode(bounds)
 }
 
 // LocationSourceResponse is the API response for /api/location/source

@@ -201,6 +201,36 @@ func (db *DB) GetLocationSource(timestamp int64, deviceID string) (*LocationSour
 	return &src, nil
 }
 
+// Bounds represents a geographic bounding box
+type Bounds struct {
+	MinLat float64 `json:"min_lat"`
+	MaxLat float64 `json:"max_lat"`
+	MinLon float64 `json:"min_lon"`
+	MaxLon float64 `json:"max_lon"`
+}
+
+// GetBoundsForDate returns the combined bounding box for all paths on a given date
+func (db *DB) GetBoundsForDate(date string) (*Bounds, error) {
+	row := db.QueryRow(
+		`SELECT MIN(min_lat), MAX(max_lat), MIN(min_lon), MAX(max_lon) FROM paths WHERE date = ?`,
+		date,
+	)
+	var minLat, maxLat, minLon, maxLon sql.NullFloat64
+	err := row.Scan(&minLat, &maxLat, &minLon, &maxLon)
+	if err != nil {
+		return nil, err
+	}
+	if !minLat.Valid {
+		return nil, nil // No paths for this date
+	}
+	return &Bounds{
+		MinLat: minLat.Float64,
+		MaxLat: maxLat.Float64,
+		MinLon: minLon.Float64,
+		MaxLon: maxLon.Float64,
+	}, nil
+}
+
 // GetLocationSourceByTimestamp retrieves source metadata by timestamp only
 // Used when device_id is not available (e.g., from path points)
 func (db *DB) GetLocationSourceByTimestamp(timestamp int64) (*LocationSource, error) {
