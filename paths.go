@@ -73,9 +73,10 @@ type StationaryCluster struct {
 	PointCount int     `json:"point_count"` // Number of raw points in cluster
 }
 
-// PruneResult contains the simplified path and detected stationary clusters.
+// PruneResult contains the simplified path, detected stationary clusters, and removed points.
 type PruneResult struct {
 	Points   []PathPoint         `json:"points"`
+	Removed  []PathPoint         `json:"removed"`
 	Clusters []StationaryCluster `json:"clusters"`
 }
 
@@ -98,7 +99,7 @@ func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
 
 // PruneStationaryPoints removes redundant points when the user is stationary.
 // Points within minDistMeters of the cluster anchor are considered stationary.
-// Returns both the simplified path and the detected stationary clusters.
+// Returns the simplified path, removed points, and detected stationary clusters.
 func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResult {
 	if len(points) == 0 {
 		return PruneResult{}
@@ -117,6 +118,7 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 	}
 
 	var result []PathPoint
+	var removed []PathPoint
 	var clusters []StationaryCluster
 
 	// Start first cluster with first point
@@ -136,6 +138,8 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 			// Point is within threshold - add to current cluster
 			cluster.EndTS = pt.Timestamp
 			cluster.PointCount++
+			// Track this as a removed point
+			removed = append(removed, pt)
 		} else {
 			// Point is outside threshold - finalize cluster and start new one
 			// Emit representative point for the cluster
@@ -167,7 +171,56 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 
 	return PruneResult{
 		Points:   result,
+		Removed:  removed,
 		Clusters: clusters,
+	}
+}
+
+// SpikeResult contains the filtered path and removed spike points.
+type SpikeResult struct {
+	Points  []PathPoint `json:"points"`
+	Removed []PathPoint `json:"removed"`
+}
+
+// RemoveSpikes detects and removes outlier points that form spikes.
+// A spike is point B where: dist(A,B) > threshold AND dist(B,C) > threshold,
+// but dist(A,C) < threshold (B sticks out while A and C are close).
+// Returns kept points and removed spike points separately.
+func RemoveSpikes(points []PathPoint, thresholdMeters float64) SpikeResult {
+	if len(points) < 3 {
+		return SpikeResult{Points: points}
+	}
+
+	// We need to handle consecutive spikes, so we use a sliding window approach
+	// that compares against the last KEPT point, not the last point in sequence.
+	kept := []PathPoint{points[0]} // Always keep first point
+	var removed []PathPoint
+
+	i := 1
+	for i < len(points)-1 {
+		A := kept[len(kept)-1] // Last kept point
+		B := points[i]
+		C := points[i+1]
+
+		distAB := haversineMeters(A.Lat, A.Lon, B.Lat, B.Lon)
+		distBC := haversineMeters(B.Lat, B.Lon, C.Lat, C.Lon)
+		distAC := haversineMeters(A.Lat, A.Lon, C.Lat, C.Lon)
+
+		// B is a spike if it's far from both A and C, but A and C are close
+		if distAB > thresholdMeters && distBC > thresholdMeters && distAC < thresholdMeters {
+			removed = append(removed, B)
+		} else {
+			kept = append(kept, B)
+		}
+		i++
+	}
+
+	// Always keep last point
+	kept = append(kept, points[len(points)-1])
+
+	return SpikeResult{
+		Points:  kept,
+		Removed: removed,
 	}
 }
 
@@ -454,34 +507,74 @@ func (db *DB) GetPathPoints(pathID int64) ([]PathPoint, error) {
 	return points, rows.Err()
 }
 
+// SimplifyOptions configures the path simplification pipeline.
+type SimplifyOptions struct {
+	PruneMeters float64  // Stationary point pruning threshold (0 = disabled)
+	SpikeMeters float64  // Spike detection threshold (0 = disabled)
+	Order       []string // Order of operations, e.g. ["stationary", "spikes"]
+}
+
+// RemovedPoints tracks points removed by each simplification stage.
+type RemovedPoints struct {
+	Stationary []PathPoint `json:"stationary"`
+	Spikes     []PathPoint `json:"spikes"`
+}
+
+// PathsResult contains paths and information about removed points.
+type PathsResult struct {
+	Paths   []Path        `json:"paths"`
+	Removed RemovedPoints `json:"removed"`
+}
+
 // QueryPathsWithPoints returns paths with their points loaded and simplified for the viewport.
-// If pruneMeters > 0, stationary points within that distance are pruned before simplification.
-func (db *DB) QueryPathsWithPoints(bbox BBox, start, end *int64, pruneMeters float64) ([]Path, error) {
+// The simplification pipeline is configured via SimplifyOptions.
+func (db *DB) QueryPathsWithPoints(bbox BBox, start, end *int64, opts SimplifyOptions) (PathsResult, error) {
 	paths, err := db.QueryPathsByBBox(bbox, start, end)
 	if err != nil {
-		return nil, err
+		return PathsResult{}, err
 	}
 
 	// Calculate simplification tolerance based on viewport
 	tolerance := ToleranceFromBBox(bbox)
 
+	var allRemovedStationary []PathPoint
+	var allRemovedSpikes []PathPoint
+
 	for i := range paths {
 		points, err := db.GetPathPoints(paths[i].ID)
 		if err != nil {
-			return nil, err
+			return PathsResult{}, err
 		}
 
-		// First, prune stationary points if threshold is set
-		if pruneMeters > 0 {
-			pruned := PruneStationaryPoints(points, pruneMeters)
-			points = pruned.Points
+		// Apply simplification stages in specified order
+		for _, stage := range opts.Order {
+			switch stage {
+			case "stationary":
+				if opts.PruneMeters > 0 {
+					result := PruneStationaryPoints(points, opts.PruneMeters)
+					points = result.Points
+					allRemovedStationary = append(allRemovedStationary, result.Removed...)
+				}
+			case "spikes":
+				if opts.SpikeMeters > 0 {
+					result := RemoveSpikes(points, opts.SpikeMeters)
+					points = result.Points
+					allRemovedSpikes = append(allRemovedSpikes, result.Removed...)
+				}
+			}
 		}
 
-		// Then simplify for the current viewport
+		// Finally, apply Douglas-Peucker simplification for viewport
 		paths[i].Points = SimplifyPath(points, tolerance)
 	}
 
-	return paths, nil
+	return PathsResult{
+		Paths: paths,
+		Removed: RemovedPoints{
+			Stationary: allRemovedStationary,
+			Spikes:     allRemovedSpikes,
+		},
+	}, nil
 }
 
 // RebuildAllPaths recomputes all paths from scratch

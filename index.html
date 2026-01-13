@@ -48,10 +48,74 @@
             padding: 12px;
             border-radius: 6px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            width: 180px;
+            width: 240px;
+            font-size: 12px;
         }
         #controls label { display: block; margin-bottom: 4px; font-size: 12px; color: #666; }
-        #controls input { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; }
+        #controls input[type="date"] { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; }
+        #controls input[type="range"] { width: 100%; }
+        .section-header {
+            font-weight: 600;
+            color: #333;
+            margin: 12px 0 8px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #eee;
+        }
+        .section-header:first-child { margin-top: 0; }
+        .pipeline-stage {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px;
+            margin: 4px 0;
+            background: #f8f8f8;
+            border-radius: 4px;
+        }
+        .pipeline-stage input[type="checkbox"] { margin: 0; }
+        .pipeline-stage .stage-name { flex: 1; }
+        .pipeline-stage .stage-value { 
+            font-size: 11px; 
+            color: #666;
+            min-width: 35px;
+            text-align: right;
+        }
+        .pipeline-arrows {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .pipeline-arrows button {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            cursor: pointer;
+            padding: 0 4px;
+            font-size: 10px;
+            line-height: 1.2;
+            color: #666;
+        }
+        .pipeline-arrows button:hover { background: #eee; }
+        .pipeline-arrows button:disabled { opacity: 0.3; cursor: default; }
+        .show-removed {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin: 4px 0;
+        }
+        .show-removed input[type="checkbox"] { margin: 0; }
+        .show-removed .count { 
+            font-size: 11px; 
+            color: #999;
+            margin-left: auto;
+        }
+        .slider-row {
+            margin: 8px 0;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2px;
+        }
         #status {
             position: absolute;
             bottom: 10px;
@@ -131,15 +195,47 @@
 
     <div id="map"></div>
     <div id="controls">
-        <label>Date</label>
+        <div class="section-header">Date</div>
         <input type="date" id="dateFilter">
-        <div style="margin-top: 12px;">
-            <label>Prune Distance: <span id="pruneValue">50m</span></label>
-            <input type="range" id="pruneSlider" min="0" max="200" value="50" step="5">
-            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #999;">
-                <span>Off</span>
-                <span>200m</span>
+
+        <div class="section-header">Simplification Pipeline</div>
+        <div id="pipeline">
+            <div class="pipeline-stage" data-stage="stationary">
+                <input type="checkbox" id="stationaryEnabled" checked>
+                <span class="stage-name">Stationary</span>
+                <span class="stage-value" id="stationaryValue">50m</span>
+                <div class="pipeline-arrows">
+                    <button class="move-up" title="Move up">^</button>
+                    <button class="move-down" title="Move down">v</button>
+                </div>
             </div>
+            <div class="slider-row" id="stationarySliderRow">
+                <input type="range" id="stationarySlider" min="0" max="200" value="50" step="5">
+            </div>
+            <div class="pipeline-stage" data-stage="spikes">
+                <input type="checkbox" id="spikesEnabled" checked>
+                <span class="stage-name">Spikes</span>
+                <span class="stage-value" id="spikesValue">50m</span>
+                <div class="pipeline-arrows">
+                    <button class="move-up" title="Move up">^</button>
+                    <button class="move-down" title="Move down">v</button>
+                </div>
+            </div>
+            <div class="slider-row" id="spikesSliderRow">
+                <input type="range" id="spikesSlider" min="0" max="200" value="50" step="5">
+            </div>
+        </div>
+
+        <div class="section-header">Show Removed</div>
+        <div class="show-removed">
+            <input type="checkbox" id="showStationary">
+            <label for="showStationary">Stationary</label>
+            <span class="count" id="stationaryCount">(0)</span>
+        </div>
+        <div class="show-removed">
+            <input type="checkbox" id="showSpikes">
+            <label for="showSpikes">Spikes</label>
+            <span class="count" id="spikesCount">(0)</span>
         </div>
     </div>
     <div id="status">Paths: 0, Points: 0</div>
@@ -155,6 +251,17 @@
         let pathsLayer = L.layerGroup().addTo(map);
         let currentLayer = L.layerGroup().addTo(map);
         let photosLayer = L.layerGroup().addTo(map);
+        let removedStationaryLayer = L.layerGroup();
+        let removedSpikesLayer = L.layerGroup();
+
+        // Store last response for re-rendering removed points
+        let lastPathsData = null;
+
+        // Pipeline state
+        const pipeline = [
+            { id: 'stationary', enabled: true, threshold: 50 },
+            { id: 'spikes', enabled: true, threshold: 50 }
+        ];
 
         function formatDateTime(timestamp) {
             const d = new Date(timestamp * 1000);
@@ -418,15 +525,71 @@
                 url += `&end=${Math.floor(end.getTime() / 1000)}`;
             }
 
-            const pruneMeters = document.getElementById('pruneSlider').value;
-            if (pruneMeters > 0) {
-                url += `&prune=${pruneMeters}`;
+            // Build pipeline parameters from state
+            const enabledStages = pipeline.filter(s => s.enabled);
+            const order = enabledStages.map(s => s.id).join(',');
+            if (order) {
+                url += `&order=${order}`;
+            }
+
+            const stationary = pipeline.find(s => s.id === 'stationary');
+            if (stationary && stationary.enabled && stationary.threshold > 0) {
+                url += `&prune=${stationary.threshold}`;
+            }
+
+            const spikes = pipeline.find(s => s.id === 'spikes');
+            if (spikes && spikes.enabled && spikes.threshold > 0) {
+                url += `&spikes=${spikes.threshold}`;
             }
 
             fetch(url)
                 .then(r => r.json())
-                .then(renderPaths)
+                .then(data => {
+                    lastPathsData = data;
+                    renderPaths(data);
+                    renderRemovedPoints(data);
+                })
                 .catch(err => console.error('Failed to fetch paths:', err));
+        }
+
+        function renderRemovedPoints(data) {
+            removedStationaryLayer.clearLayers();
+            removedSpikesLayer.clearLayers();
+
+            const stationaryCount = data.removed?.stationary?.length || 0;
+            const spikesCount = data.removed?.spikes?.length || 0;
+
+            document.getElementById('stationaryCount').textContent = `(${stationaryCount})`;
+            document.getElementById('spikesCount').textContent = `(${spikesCount})`;
+
+            // Render removed stationary points as gray dots
+            if (data.removed?.stationary) {
+                data.removed.stationary.forEach(pt => {
+                    L.circleMarker([pt.lat, pt.lon], {
+                        radius: 4,
+                        fillColor: '#888',
+                        color: '#666',
+                        weight: 1,
+                        opacity: 0.7,
+                        fillOpacity: 0.5
+                    }).addTo(removedStationaryLayer);
+                });
+            }
+
+            // Render removed spikes as purple dots
+            if (data.removed?.spikes) {
+                data.removed.spikes.forEach(pt => {
+                    L.circleMarker([pt.lat, pt.lon], {
+                        radius: 5,
+                        fillColor: '#9b59b6',
+                        color: '#8e44ad',
+                        weight: 2,
+                        opacity: 0.9,
+                        fillOpacity: 0.7
+                    }).bindPopup(`Spike removed<br>${formatDateTime(pt.timestamp)}`)
+                      .addTo(removedSpikesLayer);
+                });
+            }
         }
 
         function onDateChange() {
@@ -468,16 +631,110 @@
         document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
         document.getElementById('dateFilter').addEventListener('change', onDateChange);
 
-        // Prune slider
-        const pruneSlider = document.getElementById('pruneSlider');
-        const pruneValue = document.getElementById('pruneValue');
-        pruneSlider.addEventListener('input', () => {
-            const val = pruneSlider.value;
-            pruneValue.textContent = val == 0 ? 'Off' : val + 'm';
+        // Pipeline controls
+        function updatePipelineUI() {
+            const pipelineEl = document.getElementById('pipeline');
+            const stages = pipelineEl.querySelectorAll('.pipeline-stage');
+            
+            // Update arrow button states
+            stages.forEach((stageEl, index) => {
+                const upBtn = stageEl.querySelector('.move-up');
+                const downBtn = stageEl.querySelector('.move-down');
+                upBtn.disabled = index === 0;
+                downBtn.disabled = index === stages.length - 1;
+            });
+        }
+
+        function movePipelineStage(stageId, direction) {
+            const index = pipeline.findIndex(s => s.id === stageId);
+            if (index === -1) return;
+            
+            const newIndex = direction === 'up' ? index - 1 : index + 1;
+            if (newIndex < 0 || newIndex >= pipeline.length) return;
+            
+            // Swap in state
+            [pipeline[index], pipeline[newIndex]] = [pipeline[newIndex], pipeline[index]];
+            
+            // Swap in DOM
+            const pipelineEl = document.getElementById('pipeline');
+            const stages = Array.from(pipelineEl.querySelectorAll('.pipeline-stage'));
+            const sliders = Array.from(pipelineEl.querySelectorAll('.slider-row'));
+            
+            // Clear and re-add in new order
+            pipelineEl.innerHTML = '';
+            pipeline.forEach(s => {
+                const stageIndex = s.id === 'stationary' ? 0 : 1;
+                pipelineEl.appendChild(stages[stageIndex]);
+                pipelineEl.appendChild(sliders[stageIndex]);
+            });
+            
+            updatePipelineUI();
+            fetchPaths();
+        }
+
+        // Stationary slider
+        const stationarySlider = document.getElementById('stationarySlider');
+        const stationaryValue = document.getElementById('stationaryValue');
+        const stationaryEnabled = document.getElementById('stationaryEnabled');
+        
+        stationarySlider.addEventListener('input', () => {
+            const val = stationarySlider.value;
+            stationaryValue.textContent = val == 0 ? 'Off' : val + 'm';
+            pipeline.find(s => s.id === 'stationary').threshold = parseInt(val);
         });
-        pruneSlider.addEventListener('change', () => {
+        stationarySlider.addEventListener('change', fetchPaths);
+        stationaryEnabled.addEventListener('change', () => {
+            pipeline.find(s => s.id === 'stationary').enabled = stationaryEnabled.checked;
             fetchPaths();
         });
+
+        // Spikes slider
+        const spikesSlider = document.getElementById('spikesSlider');
+        const spikesValue = document.getElementById('spikesValue');
+        const spikesEnabled = document.getElementById('spikesEnabled');
+        
+        spikesSlider.addEventListener('input', () => {
+            const val = spikesSlider.value;
+            spikesValue.textContent = val == 0 ? 'Off' : val + 'm';
+            pipeline.find(s => s.id === 'spikes').threshold = parseInt(val);
+        });
+        spikesSlider.addEventListener('change', fetchPaths);
+        spikesEnabled.addEventListener('change', () => {
+            pipeline.find(s => s.id === 'spikes').enabled = spikesEnabled.checked;
+            fetchPaths();
+        });
+
+        // Move buttons
+        document.querySelectorAll('.move-up').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const stageEl = e.target.closest('.pipeline-stage');
+                movePipelineStage(stageEl.dataset.stage, 'up');
+            });
+        });
+        document.querySelectorAll('.move-down').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const stageEl = e.target.closest('.pipeline-stage');
+                movePipelineStage(stageEl.dataset.stage, 'down');
+            });
+        });
+
+        // Show removed checkboxes
+        document.getElementById('showStationary').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                removedStationaryLayer.addTo(map);
+            } else {
+                removedStationaryLayer.remove();
+            }
+        });
+        document.getElementById('showSpikes').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                removedSpikesLayer.addTo(map);
+            } else {
+                removedSpikesLayer.remove();
+            }
+        });
+
+        updatePipelineUI();
 
         // Initial load: fit to today's bounds
         onDateChange();

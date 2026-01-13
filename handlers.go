@@ -132,8 +132,9 @@ func (s *Server) handleGPSLogger(w http.ResponseWriter, r *http.Request) {
 
 // PathsResponse is the API response for /api/paths
 type PathsResponse struct {
-	Paths   []Path     `json:"paths"`
-	Current *PathPoint `json:"current"`
+	Paths   []Path        `json:"paths"`
+	Current *PathPoint    `json:"current"`
+	Removed RemovedPoints `json:"removed"`
 }
 
 // parseBBox parses a bounding box string in format sw_lng,sw_lat,ne_lng,ne_lat
@@ -204,15 +205,28 @@ func (s *Server) handleAPIPaths(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Parse prune threshold (meters). 0 = disabled.
-	var pruneMeters float64
+	// Parse simplification options
+	opts := SimplifyOptions{
+		Order: []string{"stationary", "spikes"}, // Default order
+	}
+
 	if pruneStr := r.URL.Query().Get("prune"); pruneStr != "" {
 		if v, err := strconv.ParseFloat(pruneStr, 64); err == nil && v >= 0 {
-			pruneMeters = v
+			opts.PruneMeters = v
 		}
 	}
 
-	paths, err := s.db.QueryPathsWithPoints(bbox, start, end, pruneMeters)
+	if spikeStr := r.URL.Query().Get("spikes"); spikeStr != "" {
+		if v, err := strconv.ParseFloat(spikeStr, 64); err == nil && v >= 0 {
+			opts.SpikeMeters = v
+		}
+	}
+
+	if orderStr := r.URL.Query().Get("order"); orderStr != "" {
+		opts.Order = strings.Split(orderStr, ",")
+	}
+
+	result, err := s.db.QueryPathsWithPoints(bbox, start, end, opts)
 	if err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return
@@ -230,8 +244,9 @@ func (s *Server) handleAPIPaths(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := PathsResponse{
-		Paths:   paths,
+		Paths:   result.Paths,
 		Current: current,
+		Removed: result.Removed,
 	}
 
 	if resp.Paths == nil {
