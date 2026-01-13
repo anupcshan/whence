@@ -133,6 +133,14 @@
     <div id="controls">
         <label>Date</label>
         <input type="date" id="dateFilter">
+        <div style="margin-top: 12px;">
+            <label>Prune Distance: <span id="pruneValue">50m</span></label>
+            <input type="range" id="pruneSlider" min="0" max="200" value="50" step="5">
+            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #999;">
+                <span>Off</span>
+                <span>200m</span>
+            </div>
+        </div>
     </div>
     <div id="status">Paths: 0, Points: 0</div>
 
@@ -410,6 +418,11 @@
                 url += `&end=${Math.floor(end.getTime() / 1000)}`;
             }
 
+            const pruneMeters = document.getElementById('pruneSlider').value;
+            if (pruneMeters > 0) {
+                url += `&prune=${pruneMeters}`;
+            }
+
             fetch(url)
                 .then(r => r.json())
                 .then(renderPaths)
@@ -454,6 +467,17 @@
         const now = new Date();
         document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
         document.getElementById('dateFilter').addEventListener('change', onDateChange);
+
+        // Prune slider
+        const pruneSlider = document.getElementById('pruneSlider');
+        const pruneValue = document.getElementById('pruneValue');
+        pruneSlider.addEventListener('input', () => {
+            const val = pruneSlider.value;
+            pruneValue.textContent = val == 0 ? 'Off' : val + 'm';
+        });
+        pruneSlider.addEventListener('change', () => {
+            fetchPaths();
+        });
 
         // Initial load: fit to today's bounds
         onDateChange();

@@ -204,7 +204,15 @@ func (s *Server) handleAPIPaths(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	paths, err := s.db.QueryPathsWithPoints(bbox, start, end)
+	// Parse prune threshold (meters). 0 = disabled.
+	var pruneMeters float64
+	if pruneStr := r.URL.Query().Get("prune"); pruneStr != "" {
+		if v, err := strconv.ParseFloat(pruneStr, 64); err == nil && v >= 0 {
+			pruneMeters = v
+		}
+	}
+
+	paths, err := s.db.QueryPathsWithPoints(bbox, start, end, pruneMeters)
 	if err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
 		return

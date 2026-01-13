@@ -63,6 +63,114 @@ func perpendicularDistanceDeg(point, lineStart, lineEnd PathPoint) float64 {
 	return num / den
 }
 
+// StationaryCluster represents a period where the user was stationary at one location.
+// Used for timeline features and path simplification.
+type StationaryCluster struct {
+	Lat        float64 `json:"lat"`         // Anchor point latitude (first point in cluster)
+	Lon        float64 `json:"lon"`         // Anchor point longitude
+	StartTS    int64   `json:"start_ts"`    // First point timestamp
+	EndTS      int64   `json:"end_ts"`      // Last point timestamp
+	PointCount int     `json:"point_count"` // Number of raw points in cluster
+}
+
+// PruneResult contains the simplified path and detected stationary clusters.
+type PruneResult struct {
+	Points   []PathPoint         `json:"points"`
+	Clusters []StationaryCluster `json:"clusters"`
+}
+
+// haversineMeters calculates the distance in meters between two lat/lon points.
+func haversineMeters(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadius = 6371000 // meters
+
+	lat1Rad := lat1 * math.Pi / 180
+	lat2Rad := lat2 * math.Pi / 180
+	deltaLat := (lat2 - lat1) * math.Pi / 180
+	deltaLon := (lon2 - lon1) * math.Pi / 180
+
+	a := math.Sin(deltaLat/2)*math.Sin(deltaLat/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
+			math.Sin(deltaLon/2)*math.Sin(deltaLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadius * c
+}
+
+// PruneStationaryPoints removes redundant points when the user is stationary.
+// Points within minDistMeters of the cluster anchor are considered stationary.
+// Returns both the simplified path and the detected stationary clusters.
+func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResult {
+	if len(points) == 0 {
+		return PruneResult{}
+	}
+	if len(points) == 1 {
+		return PruneResult{
+			Points: points,
+			Clusters: []StationaryCluster{{
+				Lat:        points[0].Lat,
+				Lon:        points[0].Lon,
+				StartTS:    points[0].Timestamp,
+				EndTS:      points[0].Timestamp,
+				PointCount: 1,
+			}},
+		}
+	}
+
+	var result []PathPoint
+	var clusters []StationaryCluster
+
+	// Start first cluster with first point
+	cluster := StationaryCluster{
+		Lat:        points[0].Lat,
+		Lon:        points[0].Lon,
+		StartTS:    points[0].Timestamp,
+		EndTS:      points[0].Timestamp,
+		PointCount: 1,
+	}
+
+	for i := 1; i < len(points); i++ {
+		pt := points[i]
+		dist := haversineMeters(cluster.Lat, cluster.Lon, pt.Lat, pt.Lon)
+
+		if dist < minDistMeters {
+			// Point is within threshold - add to current cluster
+			cluster.EndTS = pt.Timestamp
+			cluster.PointCount++
+		} else {
+			// Point is outside threshold - finalize cluster and start new one
+			// Emit representative point for the cluster
+			result = append(result, PathPoint{
+				Lat:       cluster.Lat,
+				Lon:       cluster.Lon,
+				Timestamp: cluster.StartTS,
+			})
+			clusters = append(clusters, cluster)
+
+			// Start new cluster
+			cluster = StationaryCluster{
+				Lat:        pt.Lat,
+				Lon:        pt.Lon,
+				StartTS:    pt.Timestamp,
+				EndTS:      pt.Timestamp,
+				PointCount: 1,
+			}
+		}
+	}
+
+	// Finalize last cluster
+	result = append(result, PathPoint{
+		Lat:       cluster.Lat,
+		Lon:       cluster.Lon,
+		Timestamp: cluster.StartTS,
+	})
+	clusters = append(clusters, cluster)
+
+	return PruneResult{
+		Points:   result,
+		Clusters: clusters,
+	}
+}
+
 // ToleranceFromBBox calculates an appropriate simplification tolerance based on viewport size.
 // Returns tolerance in degrees - smaller viewport = smaller tolerance = more detail.
 func ToleranceFromBBox(bbox BBox) float64 {
@@ -346,8 +454,9 @@ func (db *DB) GetPathPoints(pathID int64) ([]PathPoint, error) {
 	return points, rows.Err()
 }
 
-// QueryPathsWithPoints returns paths with their points loaded and simplified for the viewport
-func (db *DB) QueryPathsWithPoints(bbox BBox, start, end *int64) ([]Path, error) {
+// QueryPathsWithPoints returns paths with their points loaded and simplified for the viewport.
+// If pruneMeters > 0, stationary points within that distance are pruned before simplification.
+func (db *DB) QueryPathsWithPoints(bbox BBox, start, end *int64, pruneMeters float64) ([]Path, error) {
 	paths, err := db.QueryPathsByBBox(bbox, start, end)
 	if err != nil {
 		return nil, err
@@ -361,7 +470,14 @@ func (db *DB) QueryPathsWithPoints(bbox BBox, start, end *int64) ([]Path, error)
 		if err != nil {
 			return nil, err
 		}
-		// Simplify points for the current viewport
+
+		// First, prune stationary points if threshold is set
+		if pruneMeters > 0 {
+			pruned := PruneStationaryPoints(points, pruneMeters)
+			points = pruned.Points
+		}
+
+		// Then simplify for the current viewport
 		paths[i].Points = SimplifyPath(points, tolerance)
 	}
 
