@@ -68,7 +68,11 @@
             50% { transform: scale(1.5); opacity: 0.7; }
             100% { transform: scale(1); opacity: 1; }
         }
-        .current-marker { animation: pulse 2s infinite; }
+        .current-marker {
+            animation: pulse 2s infinite;
+            background: transparent !important;
+            border: none !important;
+        }
 
         /* Photo markers */
         .photo-marker {
