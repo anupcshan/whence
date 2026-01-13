@@ -16,6 +16,11 @@ type Location struct {
 	DeviceID  string  `json:"device_id"`
 	Lat       float64 `json:"lat"`
 	Lon       float64 `json:"lon"`
+	// Extended fields (nullable)
+	AltitudeM *float64 `json:"altitude_m,omitempty"` // meters
+	AccuracyM *float64 `json:"accuracy_m,omitempty"` // meters
+	SpeedKmh  *float64 `json:"speed_kmh,omitempty"`  // km/h
+	Source    *string  `json:"source,omitempty"`     // GPS, WIFI, CELL, etc.
 }
 
 type DB struct {
@@ -45,8 +50,8 @@ func OpenDB(path string) (*DB, error) {
 
 func (db *DB) InsertLocation(loc Location) error {
 	_, err := db.Exec(
-		`INSERT OR IGNORE INTO locations (timestamp, user_id, device_id, lat, lon) VALUES (?, ?, ?, ?, ?)`,
-		loc.Timestamp, loc.UserID, loc.DeviceID, loc.Lat, loc.Lon,
+		`INSERT OR IGNORE INTO locations (timestamp, user_id, device_id, lat, lon, altitude_m, accuracy_m, speed_kmh, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		loc.Timestamp, loc.UserID, loc.DeviceID, loc.Lat, loc.Lon, loc.AltitudeM, loc.AccuracyM, loc.SpeedKmh, loc.Source,
 	)
 	return err
 }
@@ -122,14 +127,14 @@ func (db *DB) InsertLocationBatch(locs []Location) (inserted, skipped int, err e
 		}
 	}()
 
-	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO locations (timestamp, user_id, device_id, lat, lon) VALUES (?, ?, ?, ?, ?)`)
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO locations (timestamp, user_id, device_id, lat, lon, altitude_m, accuracy_m, speed_kmh, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer stmt.Close()
 
 	for _, loc := range locs {
-		result, err := stmt.Exec(loc.Timestamp, loc.UserID, loc.DeviceID, loc.Lat, loc.Lon)
+		result, err := stmt.Exec(loc.Timestamp, loc.UserID, loc.DeviceID, loc.Lat, loc.Lon, loc.AltitudeM, loc.AccuracyM, loc.SpeedKmh, loc.Source)
 		if err != nil {
 			return inserted, skipped, err
 		}
@@ -159,8 +164,8 @@ func (db *DB) InsertLocationWithSource(loc Location, source LocationSource) (ins
 
 	// Insert location
 	result, err := tx.Exec(
-		`INSERT OR IGNORE INTO locations (timestamp, user_id, device_id, lat, lon) VALUES (?, ?, ?, ?, ?)`,
-		loc.Timestamp, loc.UserID, loc.DeviceID, loc.Lat, loc.Lon,
+		`INSERT OR IGNORE INTO locations (timestamp, user_id, device_id, lat, lon, altitude_m, accuracy_m, speed_kmh, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		loc.Timestamp, loc.UserID, loc.DeviceID, loc.Lat, loc.Lon, loc.AltitudeM, loc.AccuracyM, loc.SpeedKmh, loc.Source,
 	)
 	if err != nil {
 		return false, err

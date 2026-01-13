@@ -18,7 +18,7 @@
     <form hx-post="/api/immich/import" hx-target="#scan-area" hx-swap="innerHTML">
         {{if .After}}<input type="hidden" name="after" value="{{.After}}">{{end}}
         {{if .Before}}<input type="hidden" name="before" value="{{.Before}}">{{end}}
-        
+
         <table class="camera-table">
             <thead>
                 <tr>

@@ -4,20 +4,20 @@ CREATE TABLE IF NOT EXISTS import_jobs (
     status       TEXT NOT NULL,      -- pending, running, completed, failed, interrupted
     started_at   INTEGER NOT NULL,
     completed_at INTEGER,
-    
+
     -- Progress tracking
     total_assets INTEGER,
     processed    INTEGER DEFAULT 0,
     imported     INTEGER DEFAULT 0,
     skipped      INTEGER DEFAULT 0,
     errors       INTEGER DEFAULT 0,
-    
+
     -- Checkpoint for resume
     last_page    INTEGER DEFAULT 0,
-    
+
     -- Filters used (JSON) - allows resume with same parameters
     config_json  TEXT NOT NULL,
-    
+
     -- Error information
     last_error   TEXT
 );

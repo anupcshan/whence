@@ -23,6 +23,10 @@ type OwnTracksPayload struct {
 	Lon       float64 `json:"lon"`
 	Timestamp int64   `json:"tst"`
 	TrackerID string  `json:"tid"`
+	// Extended fields
+	Accuracy *float64 `json:"acc,omitempty"` // meters
+	Altitude *float64 `json:"alt,omitempty"` // meters
+	Velocity *float64 `json:"vel,omitempty"` // km/h
 }
 
 // POST /owntracks - OwnTracks compatible endpoint
@@ -56,7 +60,14 @@ func (s *Server) handleOwnTracks(w http.ResponseWriter, r *http.Request) {
 		DeviceID:  payload.TrackerID,
 		Lat:       payload.Lat,
 		Lon:       payload.Lon,
+		AccuracyM: payload.Accuracy,
+		AltitudeM: payload.Altitude,
+		SpeedKmh:  payload.Velocity,
 	}
+
+	// Set source to "owntracks" for OwnTracks submissions
+	src := "owntracks"
+	loc.Source = &src
 
 	if err := s.db.InsertLocation(loc); err != nil {
 		http.Error(w, "database error", http.StatusInternalServerError)
@@ -110,12 +121,14 @@ func (s *Server) handleGPSLogger(w http.ResponseWriter, r *http.Request) {
 		timestamp = time.Now().Unix()
 	}
 
+	src := "gpslogger"
 	loc := Location{
 		Timestamp: timestamp,
 		UserID:    s.defaultUserID,
 		DeviceID:  "gpslogger",
 		Lat:       lat,
 		Lon:       lon,
+		Source:    &src,
 	}
 
 	if err := s.db.InsertLocation(loc); err != nil {
@@ -477,6 +490,134 @@ func buildPopupHTML(photos []PhotoLocation) string {
 	}
 	popup.WriteString(`</div>`)
 	return popup.String()
+}
+
+// POST /api/import/timeline - Import Android Timeline JSON with SSE progress
+func (s *Server) handleImportTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse multipart form (max 500MB)
+	if err := r.ParseMultipartForm(500 << 20); err != nil {
+		http.Error(w, "failed to parse form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "no file uploaded", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	deviceID := r.FormValue("device_id")
+	if deviceID == "" {
+		deviceID = "google-timeline"
+	}
+
+	// Set up SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	sendProgress := func(progress TimelineImportProgress) {
+		data, _ := json.Marshal(progress)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	// Parse timeline
+	sendProgress(TimelineImportProgress{
+		Message: "Parsing timeline file...",
+	})
+
+	timeline, err := ParseTimeline(file)
+	if err != nil {
+		sendProgress(TimelineImportProgress{
+			Error:    err.Error(),
+			Complete: true,
+		})
+		return
+	}
+
+	// Count positions
+	var posCount int
+	for _, sig := range timeline.RawSignals {
+		if sig.Position != nil {
+			posCount++
+		}
+	}
+
+	sendProgress(TimelineImportProgress{
+		Stats:   TimelineImportStats{Total: posCount},
+		Message: fmt.Sprintf("Found %d positions, extracting...", posCount),
+	})
+
+	// Extract locations
+	locations, parseErrors := ExtractLocations(timeline, s.defaultUserID, deviceID)
+
+	stats := TimelineImportStats{
+		Total:  posCount,
+		Parsed: len(locations),
+		Errors: len(parseErrors),
+	}
+
+	sendProgress(TimelineImportProgress{
+		Stats:   stats,
+		Message: fmt.Sprintf("Parsed %d locations, importing...", len(locations)),
+	})
+
+	// Batch insert in chunks of 1000
+	const batchSize = 1000
+
+	for i := 0; i < len(locations); i += batchSize {
+		end := i + batchSize
+		if end > len(locations) {
+			end = len(locations)
+		}
+		batch := locations[i:end]
+
+		inserted, skipped, err := s.db.InsertLocationBatch(batch)
+		if err != nil {
+			sendProgress(TimelineImportProgress{
+				Stats:    stats,
+				Error:    fmt.Sprintf("Database error at batch %d: %v", i/batchSize, err),
+				Complete: true,
+			})
+			return
+		}
+
+		stats.Inserted += inserted
+		stats.Skipped += skipped
+
+		sendProgress(TimelineImportProgress{
+			Stats:   stats,
+			Message: fmt.Sprintf("Imported %d/%d locations...", stats.Inserted+stats.Skipped, len(locations)),
+		})
+	}
+
+	// Update paths for all parsed locations (UpdatePathsForLocations handles duplicates)
+	if stats.Inserted > 0 {
+		sendProgress(TimelineImportProgress{
+			Stats:   stats,
+			Message: "Updating path index...",
+		})
+		_ = s.db.UpdatePathsForLocations(locations)
+	}
+
+	sendProgress(TimelineImportProgress{
+		Stats:    stats,
+		Message:  fmt.Sprintf("Import complete: %d inserted, %d duplicates skipped", stats.Inserted, stats.Skipped),
+		Complete: true,
+	})
 }
 
 // GET /api/photos - Returns clustered photos for a time range and bounding box

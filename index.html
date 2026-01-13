@@ -88,8 +88,8 @@
         }
         .pipeline-stage input[type="checkbox"] { margin: 0; }
         .pipeline-stage .stage-name { flex: 1; }
-        .pipeline-stage .stage-value { 
-            font-size: 11px; 
+        .pipeline-stage .stage-value {
+            font-size: 11px;
             color: #666;
             min-width: 35px;
             text-align: right;
@@ -118,8 +118,8 @@
             margin: 4px 0;
         }
         .show-removed input[type="checkbox"] { margin: 0; }
-        .show-removed .count { 
-            font-size: 11px; 
+        .show-removed .count {
+            font-size: 11px;
             color: #999;
             margin-left: auto;
         }
@@ -653,7 +653,7 @@
         function updatePipelineUI() {
             const pipelineEl = document.getElementById('pipeline');
             const stages = pipelineEl.querySelectorAll('.pipeline-stage');
-            
+
             // Update arrow button states
             stages.forEach((stageEl, index) => {
                 const upBtn = stageEl.querySelector('.move-up');
@@ -666,18 +666,18 @@
         function movePipelineStage(stageId, direction) {
             const index = pipeline.findIndex(s => s.id === stageId);
             if (index === -1) return;
-            
+
             const newIndex = direction === 'up' ? index - 1 : index + 1;
             if (newIndex < 0 || newIndex >= pipeline.length) return;
-            
+
             // Swap in state
             [pipeline[index], pipeline[newIndex]] = [pipeline[newIndex], pipeline[index]];
-            
+
             // Swap in DOM
             const pipelineEl = document.getElementById('pipeline');
             const stages = Array.from(pipelineEl.querySelectorAll('.pipeline-stage'));
             const sliders = Array.from(pipelineEl.querySelectorAll('.slider-row'));
-            
+
             // Clear and re-add in new order
             pipelineEl.innerHTML = '';
             pipeline.forEach(s => {
@@ -685,7 +685,7 @@
                 pipelineEl.appendChild(stages[stageIndex]);
                 pipelineEl.appendChild(sliders[stageIndex]);
             });
-            
+
             updatePipelineUI();
             fetchPaths();
         }
@@ -694,7 +694,7 @@
         const stationarySlider = document.getElementById('stationarySlider');
         const stationaryValue = document.getElementById('stationaryValue');
         const stationaryEnabled = document.getElementById('stationaryEnabled');
-        
+
         stationarySlider.addEventListener('input', () => {
             const val = stationarySlider.value;
             stationaryValue.textContent = val == 0 ? 'Off' : val + 'm';
@@ -710,7 +710,7 @@
         const spikesSlider = document.getElementById('spikesSlider');
         const spikesValue = document.getElementById('spikesValue');
         const spikesEnabled = document.getElementById('spikesEnabled');
-        
+
         spikesSlider.addEventListener('input', () => {
             const val = spikesSlider.value;
             spikesValue.textContent = val == 0 ? 'Off' : val + 'm';

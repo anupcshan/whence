@@ -242,6 +242,139 @@
                 </div>
             </div>
         </div>
+
+        <div class="import-container" style="margin-top: 20px;">
+            <h2>Import Android Timeline</h2>
+            <p style="color: #666; margin-bottom: 16px;">
+                Upload a Timeline.json file exported from Android
+                (Settings > Location > Location Services > Timeline > Export Timeline data).
+            </p>
+
+            <form id="timeline-form">
+                <div class="form-group">
+                    <label>Timeline JSON File</label>
+                    <input type="file" name="file" id="timeline-file" accept=".json" required>
+                </div>
+                <div class="form-group">
+                    <label>Device ID</label>
+                    <input type="text" name="device_id" id="timeline-device"
+                           placeholder="google-timeline" value="google-timeline">
+                </div>
+                <button type="submit" class="btn btn-primary" id="timeline-submit">
+                    Import
+                </button>
+            </form>
+
+            <div id="timeline-progress" style="display: none; margin-top: 16px;">
+                <div class="progress-bar">
+                    <div class="fill" id="timeline-progress-bar" style="width: 0%">0%</div>
+                </div>
+                <div id="timeline-status" style="color: #666; font-size: 14px;"></div>
+            </div>
+
+            <div id="timeline-result" style="margin-top: 16px;"></div>
+        </div>
     </div>
+
+    <script>
+    document.getElementById('timeline-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const fileInput = document.getElementById('timeline-file');
+        const deviceInput = document.getElementById('timeline-device');
+        const submitBtn = document.getElementById('timeline-submit');
+        const progressDiv = document.getElementById('timeline-progress');
+        const progressBar = document.getElementById('timeline-progress-bar');
+        const statusDiv = document.getElementById('timeline-status');
+        const resultDiv = document.getElementById('timeline-result');
+
+        if (!fileInput.files[0]) {
+            alert('Please select a file');
+            return;
+        }
+
+        // Reset and show progress
+        progressDiv.style.display = 'block';
+        progressBar.style.width = '0%';
+        progressBar.textContent = '0%';
+        statusDiv.textContent = 'Starting upload...';
+        resultDiv.innerHTML = '';
+        submitBtn.disabled = true;
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('device_id', deviceInput.value || 'google-timeline');
+
+        try {
+            const response = await fetch('/api/import/timeline', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const {value, done} = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, {stream: true});
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.stats && data.stats.total > 0) {
+                                const pct = Math.round(((data.stats.inserted + data.stats.skipped) / data.stats.total) * 100);
+                                progressBar.style.width = pct + '%';
+                                progressBar.textContent = pct + '%';
+                            }
+
+                            if (data.message) {
+                                statusDiv.textContent = data.message;
+                            }
+
+                            if (data.error) {
+                                resultDiv.innerHTML = `<div class="status-box error">${data.error}</div>`;
+                            }
+
+                            if (data.complete) {
+                                if (!data.error) {
+                                    const s = data.stats;
+                                    resultDiv.innerHTML = `
+                                        <div class="status-box success">
+                                            <strong>Import complete!</strong><br>
+                                            Total positions: ${s.total}<br>
+                                            Parsed: ${s.parsed}<br>
+                                            Inserted: ${s.inserted}<br>
+                                            Duplicates skipped: ${s.skipped}<br>
+                                            ${s.errors > 0 ? `Parse errors: ${s.errors}` : ''}
+                                        </div>
+                                    `;
+                                    progressBar.style.width = '100%';
+                                    progressBar.textContent = '100%';
+                                }
+                                submitBtn.disabled = false;
+                            }
+                        } catch (parseErr) {
+                            console.error('Failed to parse SSE data:', parseErr);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            resultDiv.innerHTML = `<div class="status-box error">Error: ${err.message}</div>`;
+            submitBtn.disabled = false;
+        }
+    });
+    </script>
 </body>
 </html>
