@@ -37,12 +37,80 @@
         #nav a:hover { background: #f0f0f0; }
         #nav a.active { background: #007bff; color: white; }
 
-        /* Map View */
-        #map { height: 100%; width: 100%; }
-        #controls {
+        /* Date Navigation */
+        #date-nav {
             position: absolute;
             top: 60px;
-            right: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: white;
+            padding: 4px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        #date-nav button {
+            padding: 6px 12px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+        #date-nav button:hover { background: #f0f0f0; }
+        #date-display {
+            padding: 6px 12px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 4px;
+            min-width: 140px;
+            text-align: center;
+        }
+        #date-display:hover { background: #f0f0f0; }
+        #dateFilter {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+
+        /* Map View */
+        #map { height: 100%; width: 100%; }
+
+        /* Settings FAB */
+        #settings-fab {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: white;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        #settings-fab:hover { transform: scale(1.1); }
+        #settings-fab.active { background: #007bff; color: white; }
+
+        /* Settings Panel */
+        #controls {
+            position: absolute;
+            bottom: 80px;
+            right: 20px;
             z-index: 1000;
             background: white;
             padding: 12px;
@@ -50,24 +118,10 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
             width: 240px;
             font-size: 12px;
+            display: none;
         }
-        #controls summary {
-            cursor: pointer;
-            font-weight: 600;
-            padding: 4px 0;
-            user-select: none;
-            list-style: none;
-        }
-        #controls summary::-webkit-details-marker { display: none; }
-        #controls summary::before {
-            content: '▶ ';
-            font-size: 10px;
-        }
-        #controls details[open] summary::before {
-            content: '▼ ';
-        }
+        #controls.open { display: block; }
         #controls label { display: block; margin-bottom: 4px; font-size: 12px; color: #666; }
-        #controls input[type="date"] { width: 100%; padding: 6px; border: 1px solid #ddd; border-radius: 4px; }
         #controls input[type="range"] { width: 100%; }
         .section-header {
             font-weight: 600;
@@ -213,13 +267,16 @@
         <a href="/import">Import</a>
     </div>
 
-    <div id="map"></div>
-    <div id="controls">
-        <details>
-            <summary>Options</summary>
-            <div class="section-header">Date</div>
-            <input type="date" id="dateFilter">
+    <div id="date-nav">
+        <button id="date-prev" title="Previous day">&lt;</button>
+        <span id="date-display"></span>
+        <input type="date" id="dateFilter">
+        <button id="date-next" title="Next day">&gt;</button>
+    </div>
 
+    <div id="map"></div>
+    <button id="settings-fab" title="Options">&#9881;</button>
+    <div id="controls">
         <div class="section-header">Simplification Pipeline</div>
         <div id="pipeline">
             <div class="pipeline-stage" data-stage="stationary">
@@ -259,7 +316,6 @@
             <label for="showSpikes">Spikes</label>
             <span class="count" id="spikesCount">(0)</span>
         </div>
-        </details>
     </div>
     <div id="status">Paths: 0, Points: 0</div>
 
@@ -653,9 +709,53 @@
             fetchPaths();
             fetchPhotos();
         });
+
+        // Date navigation
+        const dateFilter = document.getElementById('dateFilter');
+        const dateDisplay = document.getElementById('date-display');
+        const datePrev = document.getElementById('date-prev');
+        const dateNext = document.getElementById('date-next');
+
+        function formatDateDisplay(dateStr) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const date = new Date(y, m - 1, d);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            if (date.getTime() === today.getTime()) {
+                return 'Today';
+            } else if (date.getTime() === yesterday.getTime()) {
+                return 'Yesterday';
+            } else {
+                return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            }
+        }
+
+        function updateDateDisplay() {
+            dateDisplay.textContent = formatDateDisplay(dateFilter.value);
+        }
+
+        function changeDate(delta) {
+            const [y, m, d] = dateFilter.value.split('-').map(Number);
+            const date = new Date(y, m - 1, d);
+            date.setDate(date.getDate() + delta);
+            dateFilter.value = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+            updateDateDisplay();
+            onDateChange();
+        }
+
         const now = new Date();
-        document.getElementById('dateFilter').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-        document.getElementById('dateFilter').addEventListener('change', onDateChange);
+        dateFilter.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+        updateDateDisplay();
+        dateFilter.addEventListener('change', () => {
+            updateDateDisplay();
+            onDateChange();
+        });
+        dateDisplay.addEventListener('click', () => dateFilter.showPicker());
+        datePrev.addEventListener('click', () => changeDate(-1));
+        dateNext.addEventListener('click', () => changeDate(1));
 
         // Pipeline controls
         function updatePipelineUI() {
@@ -757,6 +857,23 @@
                 removedSpikesLayer.addTo(map);
             } else {
                 removedSpikesLayer.remove();
+            }
+        });
+
+        // Settings FAB toggle
+        const settingsFab = document.getElementById('settings-fab');
+        const controlsPanel = document.getElementById('controls');
+
+        settingsFab.addEventListener('click', () => {
+            settingsFab.classList.toggle('active');
+            controlsPanel.classList.toggle('open');
+        });
+
+        // Close panel when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!controlsPanel.contains(e.target) && !settingsFab.contains(e.target)) {
+                settingsFab.classList.remove('active');
+                controlsPanel.classList.remove('open');
             }
         });
 
