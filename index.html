@@ -331,10 +331,13 @@
                 const popup = marker.getPopup();
                 const currentContent = popup.getContent();
 
+                // Use my.immich.app for deep linking to the Immich mobile app
+                const appUrl = `https://my.immich.app/photos/${source.source_id}`;
+
                 let photoHtml = '<div style="margin-top: 8px; border-top: 1px solid #eee; padding-top: 8px;">';
 
-                // Add thumbnail
-                photoHtml += `<a href="${source.web_url}" target="_blank" rel="noopener" style="display: block;">`;
+                // Add thumbnail (links to Immich app via my.immich.app)
+                photoHtml += `<a href="${appUrl}" style="display: block;">`;
                 photoHtml += `<img src="/api/immich/assets/${source.source_id}/thumbnail" `;
                 photoHtml += `style="max-width: 200px; max-height: 150px; border-radius: 4px; cursor: pointer;" `;
                 photoHtml += `onerror="this.style.display='none'" />`;
@@ -350,12 +353,17 @@
                     photoHtml += `</div>`;
                 }
 
-                // Add link to Immich
+                // Add links to Immich (app and web)
+                photoHtml += `<div style="margin-top: 4px;">`;
+                photoHtml += `<a href="${appUrl}" style="font-size: 11px; color: #007bff; text-decoration: none;">`;
+                photoHtml += `Open in App</a>`;
                 if (source.web_url) {
+                    photoHtml += `<span style="font-size: 11px; color: #999;"> · </span>`;
                     photoHtml += `<a href="${source.web_url}" target="_blank" rel="noopener" `;
                     photoHtml += `style="font-size: 11px; color: #007bff; text-decoration: none;">`;
-                    photoHtml += `View in Immich &rarr;</a>`;
+                    photoHtml += `Web</a>`;
                 }
+                photoHtml += `</div>`;
 
                 photoHtml += '</div>';
 

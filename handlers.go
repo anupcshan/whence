@@ -481,9 +481,11 @@ func buildPopupHTML(photos []PhotoLocation) string {
 	popup.WriteString(`<div class="photo-grid">`)
 	for _, photo := range photos {
 		previewURL := fmt.Sprintf("/api/immich/assets/%s/thumbnail?size=preview", photo.SourceID)
+		// Use my.immich.app for deep linking to the Immich mobile app
+		appURL := fmt.Sprintf("https://my.immich.app/photos/%s", photo.SourceID)
 		popup.WriteString(fmt.Sprintf(
-			`<a href="%s" target="_blank" rel="noopener" title="%s"><img src="%s" alt=""></a>`,
-			html.EscapeString(photo.WebURL),
+			`<a href="%s" title="%s"><img src="%s" alt=""></a>`,
+			html.EscapeString(appURL),
 			html.EscapeString(photo.Filename),
 			previewURL,
 		))
