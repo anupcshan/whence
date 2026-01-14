@@ -152,6 +152,11 @@
             background: transparent !important;
             border: none !important;
         }
+        .current-marker-circle {
+            animation: pulse 2s infinite;
+            transform-origin: center;
+            transform-box: fill-box;
+        }
 
         /* Photo markers */
         .photo-marker {
@@ -444,21 +449,16 @@
             }
 
             if (data.current) {
-                const currentIcon = L.divIcon({
-                    className: 'current-marker',
-                    html: `<div style="
-                        width: 16px;
-                        height: 16px;
-                        background: #2ecc71;
-                        border: 3px solid #27ae60;
-                        border-radius: 50%;
-                    "></div>`,
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                });
-                L.marker([data.current.lat, data.current.lon], { icon: currentIcon })
-                    .bindPopup(`Current: ${formatDateTime(data.current.timestamp)}`)
-                    .addTo(currentLayer);
+                L.circleMarker([data.current.lat, data.current.lon], {
+                    radius: 8,
+                    fillColor: '#2ecc71',
+                    color: '#27ae60',
+                    weight: 3,
+                    opacity: 1,
+                    fillOpacity: 0.9,
+                    className: 'current-marker-circle'
+                }).bindPopup(`Current: ${formatDateTime(data.current.timestamp)}`)
+                  .addTo(currentLayer);
             }
 
             const pathCount = data.paths ? data.paths.length : 0;

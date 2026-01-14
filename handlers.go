@@ -245,14 +245,23 @@ func (s *Server) handleAPIPaths(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current location
+	// Get current location only if it falls within the requested time range
 	var current *PathPoint
 	loc, err := s.db.LatestLocation()
 	if err == nil && loc != nil {
-		current = &PathPoint{
-			Lat:       loc.Lat,
-			Lon:       loc.Lon,
-			Timestamp: loc.Timestamp,
+		inRange := true
+		if start != nil && loc.Timestamp < *start {
+			inRange = false
+		}
+		if end != nil && loc.Timestamp > *end {
+			inRange = false
+		}
+		if inRange {
+			current = &PathPoint{
+				Lat:       loc.Lat,
+				Lon:       loc.Lon,
+				Timestamp: loc.Timestamp,
+			}
 		}
 	}
 
