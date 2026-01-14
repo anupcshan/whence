@@ -1,25 +1,25 @@
 package main
 
 import (
+	"embed"
 	"html/template"
 	"io"
-	"os"
-	"path/filepath"
 	"sync"
 )
 
+//go:embed templates/*
+var templatesFS embed.FS
+
 // Templates holds parsed templates
 type Templates struct {
-	dir   string
 	cache map[string]*template.Template
 	mu    sync.RWMutex
 	funcs template.FuncMap
 }
 
 // NewTemplates creates a new template manager
-func NewTemplates(dir string) *Templates {
+func NewTemplates() *Templates {
 	return &Templates{
-		dir:   dir,
 		cache: make(map[string]*template.Template),
 		funcs: template.FuncMap{
 			"formatDate": formatDate,
@@ -54,9 +54,8 @@ func (t *Templates) get(name string) (*template.Template, error) {
 		return tmpl, nil
 	}
 
-	// Parse the template
-	path := filepath.Join(t.dir, name)
-	content, err := os.ReadFile(path)
+	// Parse the template from embedded FS
+	content, err := templatesFS.ReadFile("templates/" + name)
 	if err != nil {
 		return nil, err
 	}
@@ -68,13 +67,6 @@ func (t *Templates) get(name string) (*template.Template, error) {
 
 	t.cache[name] = tmpl
 	return tmpl, nil
-}
-
-// ClearCache clears the template cache (useful for development)
-func (t *Templates) ClearCache() {
-	t.mu.Lock()
-	t.cache = make(map[string]*template.Template)
-	t.mu.Unlock()
 }
 
 // Template helper functions

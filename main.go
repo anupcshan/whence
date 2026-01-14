@@ -16,7 +16,6 @@ func main() {
 	dbPath := flag.String("db", "./data/whence.db", "database path")
 	defaultUser := flag.String("user", "default", "default user ID")
 	configPath := flag.String("config", "", "config file path (default: ~/.config/whence/config.yaml)")
-	templatesDir := flag.String("templates", "./templates", "templates directory")
 	flag.Parse()
 
 	// Load config
@@ -37,7 +36,7 @@ func main() {
 	defer db.Close()
 
 	// Initialize templates
-	templates := NewTemplates(*templatesDir)
+	templates := NewTemplates()
 
 	server := &Server{
 		db:            db,
