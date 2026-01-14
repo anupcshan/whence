@@ -135,6 +135,13 @@ type ServerInfo struct {
 	Version string `json:"version"`
 }
 
+// ServerVersion contains version numbers from Immich API
+type ServerVersion struct {
+	Major int `json:"major"`
+	Minor int `json:"minor"`
+	Patch int `json:"patch"`
+}
+
 // UserInfo contains Immich user information
 type UserInfo struct {
 	ID    string `json:"id"`
@@ -152,8 +159,39 @@ func (c *ImmichClient) ValidateConnection(ctx context.Context) (*ServerInfo, err
 		return nil, fmt.Errorf("failed to connect or API key lacks asset.read permission: %w", err)
 	}
 
-	// Return minimal server info - we don't need server.about permission
-	return &ServerInfo{Version: "connected"}, nil
+	// Fetch server version (public endpoint, no auth required)
+	version, err := c.getServerVersion(ctx)
+	if err != nil {
+		// Non-fatal: return empty version if we can't fetch it
+		return &ServerInfo{Version: ""}, nil
+	}
+
+	return &ServerInfo{Version: version}, nil
+}
+
+// getServerVersion fetches the server version from Immich
+func (c *ImmichClient) getServerVersion(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/api/server/version", nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("server version request failed: %s", resp.Status)
+	}
+
+	var version ServerVersion
+	if err := json.NewDecoder(resp.Body).Decode(&version); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%d.%d.%d", version.Major, version.Minor, version.Patch), nil
 }
 
 // SearchAssets searches for assets matching the given options

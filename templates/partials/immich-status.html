@@ -14,7 +14,7 @@
 {{else}}
 <div class="status-box success">
     <strong>Connected to Immich</strong>
-    <p>{{.URL}} (v{{.Version}})</p>
+    <p>{{.URL}}{{if .Version}} (v{{.Version}}){{end}}</p>
 </div>
 
 <div id="scan-form">
