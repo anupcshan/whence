@@ -487,7 +487,14 @@ func clusterPhotos(photos []PhotoLocation, radius float64) []photoClusterData {
 // buildPopupHTML generates the HTML for the photo grid popup
 func buildPopupHTML(photos []PhotoLocation) string {
 	var popup strings.Builder
-	popup.WriteString(`<div class="photo-grid">`)
+	// Add count-based class for responsive grid sizing
+	gridClass := "photo-grid"
+	if len(photos) == 1 {
+		gridClass = "photo-grid photo-grid-1"
+	} else if len(photos) == 2 {
+		gridClass = "photo-grid photo-grid-2"
+	}
+	popup.WriteString(fmt.Sprintf(`<div class="%s">`, gridClass))
 	for _, photo := range photos {
 		previewURL := fmt.Sprintf("/api/immich/assets/%s/thumbnail?size=preview", photo.SourceID)
 		// Use my.immich.app for deep linking to the Immich mobile app

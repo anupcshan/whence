@@ -83,6 +83,8 @@
 
         /* Map View */
         #map { height: 100%; width: 100%; }
+        body.popup-open #nav,
+        body.popup-open #date-nav { display: none; }
 
         /* Settings FAB */
         #settings-fab {
@@ -246,6 +248,8 @@
             overflow-y: auto;
             padding: 4px;
         }
+        .photo-grid-1 { grid-template-columns: 120px; }
+        .photo-grid-2 { grid-template-columns: repeat(2, 120px); }
         .photo-grid a {
             display: block;
             width: 120px;
@@ -580,7 +584,7 @@
                         iconAnchor: [24, 24]
                     });
                     L.marker([c.lat, c.lon], { icon, zIndexOffset: 500 })
-                      .bindPopup(c.popup_html, { maxWidth: 420, maxHeight: 450 })
+                      .bindPopup(c.popup_html, { maxWidth: 420, maxHeight: 450, closeOnClick: false })
                       .addTo(photosLayer);
                 });
             } catch (err) {
@@ -705,9 +709,22 @@
                 });
         }
 
+        // Track if a popup is open to avoid refetching while viewing
+        let popupOpen = false;
+        map.on('popupopen', () => {
+            popupOpen = true;
+            document.body.classList.add('popup-open');
+        });
+        map.on('popupclose', () => {
+            popupOpen = false;
+            document.body.classList.remove('popup-open');
+        });
+
         map.on('moveend', () => {
             fetchPaths();
-            fetchPhotos();
+            if (!popupOpen) {
+                fetchPhotos();
+            }
         });
 
         // Date navigation
