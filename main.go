@@ -38,9 +38,13 @@ func main() {
 	// Initialize templates
 	templates := NewTemplates()
 
+	// Initialize geocoding service
+	geocoder := NewGeocodingService(db)
+
 	server := &Server{
 		db:            db,
 		defaultUserID: *defaultUser,
+		geocoder:      geocoder,
 	}
 
 	// Initialize Immich handlers
@@ -66,6 +70,7 @@ func main() {
 	http.HandleFunc("/api/bounds", server.handleAPIBounds)
 	http.HandleFunc("/api/location/source", server.handleAPILocationSource)
 	http.HandleFunc("/api/photos", server.handleAPIPhotos)
+	http.HandleFunc("/api/timeline", server.handleAPITimeline)
 	http.HandleFunc("/api/import/timeline", server.handleImportTimeline)
 
 	// Immich endpoints

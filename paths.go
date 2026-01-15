@@ -66,11 +66,13 @@ func perpendicularDistanceDeg(point, lineStart, lineEnd PathPoint) float64 {
 // StationaryCluster represents a period where the user was stationary at one location.
 // Used for timeline features and path simplification.
 type StationaryCluster struct {
-	Lat        float64 `json:"lat"`         // Anchor point latitude (first point in cluster)
-	Lon        float64 `json:"lon"`         // Anchor point longitude
-	StartTS    int64   `json:"start_ts"`    // First point timestamp
-	EndTS      int64   `json:"end_ts"`      // Last point timestamp
-	PointCount int     `json:"point_count"` // Number of raw points in cluster
+	Lat         float64 `json:"lat"`          // Anchor point latitude (first point in cluster)
+	Lon         float64 `json:"lon"`          // Anchor point longitude
+	CentroidLat float64 `json:"centroid_lat"` // Centroid latitude (average of all points)
+	CentroidLon float64 `json:"centroid_lon"` // Centroid longitude (average of all points)
+	StartTS     int64   `json:"start_ts"`     // First point timestamp
+	EndTS       int64   `json:"end_ts"`       // Last point timestamp
+	PointCount  int     `json:"point_count"`  // Number of raw points in cluster
 }
 
 // PruneResult contains the simplified path, detected stationary clusters, and removed points.
@@ -108,11 +110,13 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 		return PruneResult{
 			Points: points,
 			Clusters: []StationaryCluster{{
-				Lat:        points[0].Lat,
-				Lon:        points[0].Lon,
-				StartTS:    points[0].Timestamp,
-				EndTS:      points[0].Timestamp,
-				PointCount: 1,
+				Lat:         points[0].Lat,
+				Lon:         points[0].Lon,
+				CentroidLat: points[0].Lat,
+				CentroidLon: points[0].Lon,
+				StartTS:     points[0].Timestamp,
+				EndTS:       points[0].Timestamp,
+				PointCount:  1,
 			}},
 		}
 	}
@@ -129,6 +133,8 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 		EndTS:      points[0].Timestamp,
 		PointCount: 1,
 	}
+	// Track sum for centroid calculation
+	sumLat, sumLon := points[0].Lat, points[0].Lon
 
 	for i := 1; i < len(points); i++ {
 		pt := points[i]
@@ -138,14 +144,20 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 			// Point is within threshold - add to current cluster
 			cluster.EndTS = pt.Timestamp
 			cluster.PointCount++
+			sumLat += pt.Lat
+			sumLon += pt.Lon
 			// Track this as a removed point
 			removed = append(removed, pt)
 		} else {
 			// Point is outside threshold - finalize cluster and start new one
+			// Compute centroid
+			cluster.CentroidLat = sumLat / float64(cluster.PointCount)
+			cluster.CentroidLon = sumLon / float64(cluster.PointCount)
+
 			// Emit representative point for the cluster
 			result = append(result, PathPoint{
-				Lat:       cluster.Lat,
-				Lon:       cluster.Lon,
+				Lat:       cluster.CentroidLat,
+				Lon:       cluster.CentroidLon,
 				Timestamp: cluster.StartTS,
 			})
 			clusters = append(clusters, cluster)
@@ -158,13 +170,17 @@ func PruneStationaryPoints(points []PathPoint, minDistMeters float64) PruneResul
 				EndTS:      pt.Timestamp,
 				PointCount: 1,
 			}
+			sumLat, sumLon = pt.Lat, pt.Lon
 		}
 	}
 
 	// Finalize last cluster
+	cluster.CentroidLat = sumLat / float64(cluster.PointCount)
+	cluster.CentroidLon = sumLon / float64(cluster.PointCount)
+
 	result = append(result, PathPoint{
-		Lat:       cluster.Lat,
-		Lon:       cluster.Lon,
+		Lat:       cluster.CentroidLat,
+		Lon:       cluster.CentroidLon,
 		Timestamp: cluster.StartTS,
 	})
 	clusters = append(clusters, cluster)

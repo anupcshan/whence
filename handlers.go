@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -14,6 +15,7 @@ import (
 type Server struct {
 	db            *DB
 	defaultUserID string
+	geocoder      *GeocodingService
 }
 
 // OwnTracks JSON format
@@ -711,4 +713,239 @@ func (s *Server) handleAPIPhotos(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// TimelineEntry represents a single item in the timeline view
+type TimelineEntry struct {
+	Timestamp      int64           `json:"timestamp"`
+	EndTimestamp   *int64          `json:"end_timestamp,omitempty"`
+	Lat            float64         `json:"lat"`
+	Lon            float64         `json:"lon"`
+	EndLat         *float64        `json:"end_lat,omitempty"`  // For travel: destination
+	EndLon         *float64        `json:"end_lon,omitempty"`  // For travel: destination
+	PlaceName      string          `json:"place_name,omitempty"`
+	EntryType      string          `json:"type"` // "stop" or "travel"
+	Duration       *int64          `json:"duration_seconds,omitempty"`
+	DistanceMeters *float64        `json:"distance_meters,omitempty"` // For travel segments
+	Photos         []TimelinePhoto `json:"photos,omitempty"`
+}
+
+// TimelinePhoto represents a photo in the timeline
+type TimelinePhoto struct {
+	SourceID     string `json:"source_id"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	Filename     string `json:"filename,omitempty"`
+}
+
+// TimelineResponse is the API response for /api/timeline
+type TimelineResponse struct {
+	Date    string          `json:"date"`
+	Entries []TimelineEntry `json:"entries"`
+}
+
+// GET /api/timeline - Returns timeline entries for a specific date
+func (s *Server) handleAPITimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	dateStr := r.URL.Query().Get("date")
+	if dateStr == "" {
+		http.Error(w, "date parameter required (YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+
+	// Validate date format
+	if _, err := time.Parse("2006-01-02", dateStr); err != nil {
+		http.Error(w, "invalid date format, use YYYY-MM-DD", http.StatusBadRequest)
+		return
+	}
+
+	ctx := context.Background()
+
+	// Get locations for the date
+	locations, err := s.db.QueryLocationsByUserDate(s.defaultUserID, dateStr)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	if len(locations) == 0 {
+		// No data for this date
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(TimelineResponse{
+			Date:    dateStr,
+			Entries: []TimelineEntry{},
+		})
+		return
+	}
+
+	// Convert locations to path points for processing
+	points := make([]PathPoint, len(locations))
+	for i, loc := range locations {
+		points[i] = PathPoint{
+			Lat:       loc.Lat,
+			Lon:       loc.Lon,
+			Timestamp: loc.Timestamp,
+		}
+	}
+
+	// Apply stationary clustering to detect stops (using 50m threshold)
+	pruneResult := PruneStationaryPoints(points, 50)
+
+	// Get photos for this date
+	// Calculate time range from locations
+	startTS := locations[0].Timestamp
+	endTS := locations[0].Timestamp
+	for _, loc := range locations {
+		if loc.Timestamp < startTS {
+			startTS = loc.Timestamp
+		}
+		if loc.Timestamp > endTS {
+			endTS = loc.Timestamp
+		}
+	}
+
+	photos, err := s.db.QueryPhotoLocations(startTS, endTS)
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	// First: merge nearby clusters (within 500m AND short gap) to handle GPS drift
+	// Do this BEFORE filtering so that distant stops break the merge chain
+	const mergeDistanceMeters = 500.0
+	const mergeMaxGapSeconds int64 = 30 * 60 // 30 minutes
+	var mergedClusters []StationaryCluster
+	for _, cluster := range pruneResult.Clusters {
+		if len(mergedClusters) == 0 {
+			mergedClusters = append(mergedClusters, cluster)
+			continue
+		}
+
+		last := &mergedClusters[len(mergedClusters)-1]
+		dist := haversineMeters(last.CentroidLat, last.CentroidLon, cluster.CentroidLat, cluster.CentroidLon)
+		gap := cluster.StartTS - last.EndTS
+
+		if dist <= mergeDistanceMeters && gap <= mergeMaxGapSeconds {
+			// Merge: extend the previous cluster and update centroid (weighted average)
+			totalPoints := last.PointCount + cluster.PointCount
+			last.CentroidLat = (last.CentroidLat*float64(last.PointCount) + cluster.CentroidLat*float64(cluster.PointCount)) / float64(totalPoints)
+			last.CentroidLon = (last.CentroidLon*float64(last.PointCount) + cluster.CentroidLon*float64(cluster.PointCount)) / float64(totalPoints)
+			last.EndTS = cluster.EndTS
+			last.PointCount = totalPoints
+		} else {
+			mergedClusters = append(mergedClusters, cluster)
+		}
+	}
+
+	// Then: filter to only keep real stops (10+ minutes)
+	const minStopDuration int64 = 10 * 60 // 10 minutes in seconds
+	var stops []StationaryCluster
+	for _, cluster := range mergedClusters {
+		duration := cluster.EndTS - cluster.StartTS
+		if duration >= minStopDuration {
+			stops = append(stops, cluster)
+		}
+	}
+
+	// Build timeline entries: interleave stops with travel segments
+	var entries []TimelineEntry
+
+	for i, stop := range stops {
+		// Add travel segment before this stop (if not the first stop)
+		if i > 0 {
+			prevStop := stops[i-1]
+			travelStart := prevStop.EndTS
+			travelEnd := stop.StartTS
+			travelDuration := travelEnd - travelStart
+
+			// Only add travel if there's a meaningful gap
+			if travelDuration > 60 { // More than 1 minute of travel
+				// Calculate actual path distance by summing consecutive point distances
+				var distance float64
+				var lastPt *PathPoint
+				for j := range points {
+					pt := &points[j]
+					if pt.Timestamp >= travelStart && pt.Timestamp <= travelEnd {
+						if lastPt != nil {
+							distance += haversineMeters(lastPt.Lat, lastPt.Lon, pt.Lat, pt.Lon)
+						}
+						lastPt = pt
+					}
+				}
+
+				endLat, endLon := stop.CentroidLat, stop.CentroidLon
+				entries = append(entries, TimelineEntry{
+					Timestamp:      travelStart,
+					EndTimestamp:   &travelEnd,
+					Lat:            prevStop.CentroidLat,
+					Lon:            prevStop.CentroidLon,
+					EndLat:         &endLat,
+					EndLon:         &endLon,
+					EntryType:      "travel",
+					Duration:       &travelDuration,
+					DistanceMeters: &distance,
+				})
+			}
+		}
+
+		// Add the stop entry (use centroid for more accurate location)
+		duration := stop.EndTS - stop.StartTS
+		entry := TimelineEntry{
+			Timestamp:    stop.StartTS,
+			EndTimestamp: &stop.EndTS,
+			Lat:          stop.CentroidLat,
+			Lon:          stop.CentroidLon,
+			EntryType:    "stop",
+			Duration:     &duration,
+		}
+
+		// Find photos that fall within this stop's time range (with a 5-minute buffer)
+		const buffer = 5 * 60 // 5 minutes in seconds
+		for _, photo := range photos {
+			if photo.Timestamp >= stop.StartTS-buffer && photo.Timestamp <= stop.EndTS+buffer {
+				entry.Photos = append(entry.Photos, TimelinePhoto{
+					SourceID:     photo.SourceID,
+					ThumbnailURL: fmt.Sprintf("/api/immich/assets/%s/thumbnail", photo.SourceID),
+					Filename:     photo.Filename,
+				})
+			}
+		}
+
+		entries = append(entries, entry)
+	}
+
+	// Batch geocode only stop locations (not travel segments)
+	if s.geocoder != nil && len(entries) > 0 {
+		// Collect stop indices and their coordinates
+		var stopIndices []int
+		var geoPoints []LatLon
+		for i, entry := range entries {
+			if entry.EntryType == "stop" {
+				stopIndices = append(stopIndices, i)
+				geoPoints = append(geoPoints, LatLon{Lat: entry.Lat, Lon: entry.Lon})
+			}
+		}
+
+		if len(geoPoints) > 0 {
+			geocoded, err := s.geocoder.ReverseGeocodeBatch(ctx, geoPoints)
+			if err == nil {
+				for geoIdx, entryIdx := range stopIndices {
+					if place, ok := geocoded[geoIdx]; ok && place != nil {
+						entries[entryIdx].PlaceName = place.PlaceName
+					}
+				}
+			}
+		}
+	}
+
+	timelineResp := TimelineResponse{
+		Date:    dateStr,
+		Entries: entries,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(timelineResp)
 }

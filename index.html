@@ -263,6 +263,187 @@
             cursor: pointer;
         }
         .photo-grid img:hover { opacity: 0.85; }
+
+        /* Timeline Panel */
+        #timeline-toggle {
+            position: absolute;
+            top: 120px;
+            right: 20px;
+            z-index: 1000;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: white;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #timeline-toggle:hover { background: #f0f0f0; }
+        #timeline-toggle.active { background: #007bff; color: white; }
+
+        #timeline-panel {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 320px;
+            height: 100%;
+            background: white;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.15);
+            z-index: 900;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        #timeline-panel.open { transform: translateX(0); }
+        body.timeline-open #map { width: calc(100% - 320px); }
+        body.timeline-open #timeline-toggle { right: 340px; }
+
+        .timeline-header {
+            padding: 16px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .timeline-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+        }
+        .timeline-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            color: #666;
+            padding: 0 4px;
+        }
+        .timeline-close:hover { color: #333; }
+
+        .timeline-entries {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        .timeline-entry {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .timeline-entry:hover { background: #f8f9fa; }
+        .timeline-entry.active {
+            background: #e7f1ff;
+            border-left: 3px solid #007bff;
+            padding-left: 13px;
+        }
+        .timeline-entry.travel {
+            background: #fafafa;
+            padding: 8px 16px;
+            border-left: 2px dashed #ccc;
+        }
+        .timeline-entry.travel:hover { background: #f5f5f5; }
+        .timeline-travel-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #888;
+            font-size: 13px;
+        }
+        .timeline-travel-icon {
+            font-size: 14px;
+            color: #666;
+        }
+        .timeline-travel-distance {
+            color: #666;
+        }
+
+        .timeline-time {
+            font-size: 12px;
+            color: #666;
+            font-weight: 500;
+        }
+        .timeline-place {
+            font-size: 14px;
+            font-weight: 500;
+            margin: 4px 0;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .timeline-place::before {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #e74c3c;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .timeline-duration {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .timeline-photos {
+            display: flex;
+            gap: 4px;
+            margin-top: 8px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .timeline-photo {
+            width: 48px;
+            height: 48px;
+            border-radius: 4px;
+            object-fit: cover;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .timeline-photo:hover { opacity: 0.85; }
+        .timeline-more {
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 12px;
+            color: #666;
+            flex-shrink: 0;
+        }
+
+        .timeline-empty {
+            padding: 24px 16px;
+            text-align: center;
+            color: #666;
+        }
+        .timeline-loading {
+            padding: 24px 16px;
+            text-align: center;
+            color: #666;
+        }
+
+        /* Mobile responsiveness for timeline */
+        @media (max-width: 768px) {
+            #timeline-panel {
+                width: 100%;
+                height: 50%;
+                top: auto;
+                bottom: 0;
+                transform: translateY(100%);
+                border-radius: 16px 16px 0 0;
+            }
+            #timeline-panel.open { transform: translateY(0); }
+            body.timeline-open #map { width: 100%; height: 50%; }
+            body.timeline-open #timeline-toggle { right: 20px; bottom: calc(50% + 20px); top: auto; }
+            #timeline-toggle { bottom: 80px; top: auto; }
+        }
     </style>
 </head>
 <body>
@@ -322,6 +503,18 @@
         </div>
     </div>
     <div id="status">Paths: 0, Points: 0</div>
+
+    <!-- Timeline toggle and panel -->
+    <button id="timeline-toggle" title="Timeline">&#128203;</button>
+    <div id="timeline-panel">
+        <div class="timeline-header">
+            <h2>Timeline</h2>
+            <button class="timeline-close" title="Close">&times;</button>
+        </div>
+        <div class="timeline-entries" id="timeline-entries">
+            <div class="timeline-empty">Select a date to view timeline</div>
+        </div>
+    </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script>
@@ -895,6 +1088,185 @@
         });
 
         updatePipelineUI();
+
+        // Timeline functionality
+        let timelineOpen = false;
+        let timelineData = null;
+
+        const timelinePanel = document.getElementById('timeline-panel');
+        const timelineToggle = document.getElementById('timeline-toggle');
+        const timelineClose = document.querySelector('.timeline-close');
+        const timelineEntries = document.getElementById('timeline-entries');
+
+        function toggleTimeline() {
+            timelineOpen = !timelineOpen;
+            timelinePanel.classList.toggle('open', timelineOpen);
+            timelineToggle.classList.toggle('active', timelineOpen);
+            document.body.classList.toggle('timeline-open', timelineOpen);
+
+            // Trigger map resize after transition
+            setTimeout(() => map.invalidateSize(), 300);
+
+            if (timelineOpen && !timelineData) {
+                fetchTimeline();
+            }
+        }
+
+        timelineToggle.addEventListener('click', toggleTimeline);
+        timelineClose.addEventListener('click', toggleTimeline);
+
+        async function fetchTimeline() {
+            const date = document.getElementById('dateFilter').value;
+            if (!date) {
+                timelineEntries.innerHTML = '<div class="timeline-empty">Select a date to view timeline</div>';
+                return;
+            }
+
+            timelineEntries.innerHTML = '<div class="timeline-loading">Loading...</div>';
+
+            try {
+                const resp = await fetch(`/api/timeline?date=${date}`);
+                if (!resp.ok) throw new Error('Failed to fetch timeline');
+
+                timelineData = await resp.json();
+                renderTimeline(timelineData);
+            } catch (err) {
+                console.error('Timeline fetch error:', err);
+                timelineEntries.innerHTML = '<div class="timeline-empty" style="color: #e74c3c;">Failed to load timeline</div>';
+            }
+        }
+
+        function formatTimeOnly(timestamp) {
+            const d = new Date(timestamp * 1000);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatDurationShort(seconds) {
+            if (seconds < 60) return '<1m';
+            if (seconds < 3600) return Math.round(seconds / 60) + 'm';
+            // Use floor for minutes to avoid "7h 60m" when rounding up
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+        }
+
+        function formatDistance(meters, locale = navigator.language) {
+            // Locales that typically use imperial units
+            const imperialLocales = ['en-US', 'en-GB', 'my']; // US, UK (for roads), Myanmar
+            const useImperial = imperialLocales.some(loc => locale.startsWith(loc.split('-')[0]) && locale === loc);
+
+            let value, unit;
+            if (useImperial) {
+                const feet = meters * 3.28084;
+                if (feet >= 5280) {
+                    value = feet / 5280;
+                    unit = 'mile';
+                } else {
+                    value = feet;
+                    unit = 'foot';
+                }
+            } else {
+                if (meters >= 1000) {
+                    value = meters / 1000;
+                    unit = 'kilometer';
+                } else {
+                    value = meters;
+                    unit = 'meter';
+                }
+            }
+
+            return new Intl.NumberFormat(locale, {
+                style: 'unit',
+                unit: unit,
+                unitDisplay: 'short',
+                maximumFractionDigits: 1
+            }).format(value);
+        }
+
+        function renderTimeline(data) {
+            if (!data.entries || data.entries.length === 0) {
+                timelineEntries.innerHTML = '<div class="timeline-empty">No locations for this date</div>';
+                return;
+            }
+
+            timelineEntries.innerHTML = data.entries.map((entry, index) => {
+                const time = formatTimeOnly(entry.timestamp);
+                const duration = entry.duration_seconds ? formatDurationShort(entry.duration_seconds) : '';
+
+                // Handle travel entries differently
+                if (entry.type === 'travel') {
+                    const distance = entry.distance_meters ? formatDistance(entry.distance_meters) : '';
+                    return `
+                        <div class="timeline-entry travel" data-index="${index}" data-lat="${entry.lat}" data-lon="${entry.lon}" data-end-lat="${entry.end_lat || ''}" data-end-lon="${entry.end_lon || ''}">
+                            <div class="timeline-travel-info">
+                                <span class="timeline-travel-icon">&#8594;</span>
+                                <span>Travel</span>
+                                ${distance ? `<span class="timeline-travel-distance">${distance}</span>` : ''}
+                                ${duration ? `<span>${duration}</span>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Stop entry
+                const placeName = entry.place_name || 'Unknown location';
+
+                let photosHtml = '';
+                if (entry.photos && entry.photos.length > 0) {
+                    const maxPhotos = 4;
+                    const visiblePhotos = entry.photos.slice(0, maxPhotos);
+                    const remainingCount = entry.photos.length - maxPhotos;
+
+                    photosHtml = '<div class="timeline-photos">' +
+                        visiblePhotos.map(p =>
+                            `<img class="timeline-photo" src="${p.thumbnail_url}" alt="${p.filename || ''}" title="${p.filename || ''}">`
+                        ).join('') +
+                        (remainingCount > 0 ? `<span class="timeline-more">+${remainingCount}</span>` : '') +
+                        '</div>';
+                }
+
+                return `
+                    <div class="timeline-entry" data-index="${index}" data-lat="${entry.lat}" data-lon="${entry.lon}">
+                        <div class="timeline-time">${time}</div>
+                        <div class="timeline-place">${placeName}</div>
+                        ${duration ? `<div class="timeline-duration">${duration}</div>` : ''}
+                        ${photosHtml}
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handlers for entries
+            timelineEntries.querySelectorAll('.timeline-entry').forEach(el => {
+                el.addEventListener('click', () => {
+                    const lat = parseFloat(el.dataset.lat);
+                    const lon = parseFloat(el.dataset.lon);
+
+                    // For travel entries, fit to show both start and end
+                    if (el.classList.contains('travel') && el.dataset.endLat && el.dataset.endLon) {
+                        const endLat = parseFloat(el.dataset.endLat);
+                        const endLon = parseFloat(el.dataset.endLon);
+                        map.fitBounds([[lat, lon], [endLat, endLon]], { padding: [50, 50] });
+                    } else {
+                        // Center map on this location
+                        map.setView([lat, lon], 16);
+                    }
+
+                    // Highlight the selected entry
+                    timelineEntries.querySelectorAll('.timeline-entry').forEach(e => e.classList.remove('active'));
+                    el.classList.add('active');
+                });
+            });
+        }
+
+        // Hook timeline refresh into date changes
+        const originalOnDateChange = onDateChange;
+        onDateChange = function() {
+            originalOnDateChange();
+            timelineData = null; // Clear cached data
+            if (timelineOpen) {
+                fetchTimeline();
+            }
+        };
 
         // Initial load: fit to today's bounds
         onDateChange();
