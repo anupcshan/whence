@@ -1,4 +1,4 @@
-module whence
+module github.com/anupcshan/whence
 
 go 1.25.5
 
