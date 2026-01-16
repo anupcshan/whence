@@ -68,6 +68,7 @@ func main() {
 	http.HandleFunc("/api/paths", server.handleAPIPaths)
 	http.HandleFunc("/api/paths/rebuild", server.handleAPIPathsRebuild)
 	http.HandleFunc("/api/bounds", server.handleAPIBounds)
+	http.HandleFunc("/api/latest", server.handleAPILatest)
 	http.HandleFunc("/api/location/source", server.handleAPILocationSource)
 	http.HandleFunc("/api/photos", server.handleAPIPhotos)
 	http.HandleFunc("/api/timeline", server.handleAPITimeline)

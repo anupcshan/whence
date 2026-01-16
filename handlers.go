@@ -336,6 +336,27 @@ func (s *Server) handleAPIBounds(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(bounds)
 }
 
+// GET /api/latest - Returns the most recent location
+func (s *Server) handleAPILatest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	loc, err := s.db.LatestLocation()
+	if err != nil {
+		http.Error(w, "database error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if loc == nil {
+		w.Write([]byte("null"))
+		return
+	}
+	json.NewEncoder(w).Encode(loc)
+}
+
 // LocationSourceResponse is the API response for /api/location/source
 type LocationSourceResponse struct {
 	SourceType string `json:"source_type"`
@@ -721,8 +742,8 @@ type TimelineEntry struct {
 	EndTimestamp   *int64          `json:"end_timestamp,omitempty"`
 	Lat            float64         `json:"lat"`
 	Lon            float64         `json:"lon"`
-	EndLat         *float64        `json:"end_lat,omitempty"`  // For travel: destination
-	EndLon         *float64        `json:"end_lon,omitempty"`  // For travel: destination
+	EndLat         *float64        `json:"end_lat,omitempty"` // For travel: destination
+	EndLon         *float64        `json:"end_lon,omitempty"` // For travel: destination
 	PlaceName      string          `json:"place_name,omitempty"`
 	EntryType      string          `json:"type"` // "stop" or "travel"
 	Duration       *int64          `json:"duration_seconds,omitempty"`
